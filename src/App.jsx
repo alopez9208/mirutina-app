@@ -34,6 +34,7 @@ const CATEGORIES = [
 ];
 
 function categoryLabel(key) {
+  if (key === "descanso") return "Descanso";
   return CATEGORIES.find((c) => c.key === key)?.label || "";
 }
 
@@ -83,13 +84,13 @@ function PillButton({ children, onClick, subtitle, compact, muted, onDelete }) {
   );
   if (!onDelete) return <div style={{ marginBottom: compact ? 8 : 10 }}>{btn}</div>;
   return (
-    <div style={{ display: "flex", gap: 8, marginBottom: compact ? 8 : 10 }}>
+    <div style={{ display: "flex", alignItems: "center", gap: 2, marginBottom: compact ? 8 : 10 }}>
       <div style={{ flex: 1, minWidth: 0 }}>{btn}</div>
       <button
         onClick={onDelete}
-        style={{ width: 44, flexShrink: 0, borderRadius: compact ? 16 : 999, border: "1px solid #33312e", background: "#1f1e1c", color: "#e0725e", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}
+        style={{ width: 32, flexShrink: 0, border: "none", background: "transparent", color: "#5c5851", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}
       >
-        <Trash2 size={17} />
+        <Trash2 size={15} />
       </button>
     </div>
   );
@@ -615,6 +616,11 @@ export default function App() {
             {c.label}
           </PillButton>
         ))}
+        <div style={{ marginTop: 10 }}>
+          <PillButton compact muted onClick={() => chooseCategory("descanso")} subtitle="Día libre, sin ejercicios">
+            Descanso
+          </PillButton>
+        </div>
       </div>
     );
   }
@@ -624,6 +630,7 @@ export default function App() {
     const dayLabel = DAYS.find((d) => d.key === currentDayKey)?.label;
     const day = getDay(currentDayKey);
     const exercises = sortedExercises(day);
+    const isRestDay = day.category === "descanso";
     return (
       <div style={shell}>
         <TopBar title={dayLabel} onBack={() => setScreen("days")} />
@@ -634,29 +641,35 @@ export default function App() {
           Rutina: {categoryLabel(day.category)} · cambiar
         </button>
 
-        {exercises.length === 0 ? (
-          <div style={{ color: "#8a8580", fontSize: 14, marginBottom: 16 }}>Aún no has agregado ejercicios.</div>
+        {isRestDay ? (
+          <div style={{ color: "#a39d95", fontSize: 14.5, textAlign: "center", padding: "30px 0" }}>Día de descanso 🛌</div>
         ) : (
-          exercises.map((ex) => {
-            const pr = prOf(ex);
-            return (
-              <PillButton
-                key={ex.id}
-                onClick={() => openExercise(ex)}
-                onDelete={() => quickDeleteExercise(ex)}
-                subtitle={`${pr !== null ? `PR: ${pr} kg` : "Sin PR"} · ${ex.sets}x${ex.reps} reps`}
-              >
-                {ex.name}
-              </PillButton>
-            );
-          })
-        )}
+          <>
+            {exercises.length === 0 ? (
+              <div style={{ color: "#8a8580", fontSize: 14, marginBottom: 16 }}>Aún no has agregado ejercicios.</div>
+            ) : (
+              exercises.map((ex) => {
+                const pr = prOf(ex);
+                return (
+                  <PillButton
+                    key={ex.id}
+                    onClick={() => openExercise(ex)}
+                    onDelete={() => quickDeleteExercise(ex)}
+                    subtitle={`${pr !== null ? `PR: ${pr} kg` : "Sin PR"} · ${ex.sets}x${ex.reps} reps`}
+                  >
+                    {ex.name}
+                  </PillButton>
+                );
+              })
+            )}
 
-        <div style={{ marginTop: 6 }}>
-          <DashedButton onClick={openAddExercise}>
-            <Plus size={17} /> Agregar ejercicio
-          </DashedButton>
-        </div>
+            <div style={{ marginTop: 6 }}>
+              <DashedButton onClick={openAddExercise}>
+                <Plus size={17} /> Agregar ejercicio
+              </DashedButton>
+            </div>
+          </>
+        )}
       </div>
     );
   }
