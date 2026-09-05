@@ -33,6 +33,15 @@ const CATEGORIES = [
   { key: "gluteos", label: "Glúteos", exercises: ["Hip Thrust", "Patada de glúteo en polea", "Adducción", "Abducción", "Sentadilla profunda", "Búlgara"] },
 ];
 
+function slugify(str) {
+  return str
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/(^-|-$)/g, "");
+}
+
 function categoryLabel(key) {
   if (key === "descanso") return "Descanso";
   return CATEGORIES.find((c) => c.key === key)?.label || "";
@@ -42,10 +51,6 @@ function prOf(ex) {
   const recs = ex.records || [];
   if (!recs.length) return null;
   return Math.max(...recs.map((r) => Number(r.peso) || 0));
-}
-
-function sortedExercises(day) {
-  return [...(day.exercises || [])].sort((a, b) => (a.order || 0) - (b.order || 0));
 }
 
 function sortByFecha(arr) {
@@ -204,10 +209,12 @@ export default function App() {
 
   const [currentUser, setCurrentUser] = useState(null);
   const [rutina, setRutina] = useState({});
+  const [exercisesMap, setExercisesMap] = useState({});
   const [currentDayKey, setCurrentDayKey] = useState(null);
   const [changingCategory, setChangingCategory] = useState(false);
   const [currentExercise, setCurrentExercise] = useState(null);
   const [pendingExerciseName, setPendingExerciseName] = useState(null);
+  const [pendingExerciseId, setPendingExerciseId] = useState(null);
   const [editExercise, setEditExercise] = useState(false);
   const [editRecordId, setEditRecordId] = useState(null);
 
@@ -242,12 +249,20 @@ export default function App() {
   }
 
   async function loadRutina(user) {
-    const snap = await getDocs(collection(db, "users", user.uid, "rutina"));
+    const [rutinaSnap, exercisesSnap] = await Promise.all([
+      getDocs(collection(db, "users", user.uid, "rutina")),
+      getDocs(collection(db, "users", user.uid, "exercises")),
+    ]);
     const data = {};
-    snap.docs.forEach((d) => {
+    rutinaSnap.docs.forEach((d) => {
       data[d.id] = d.data();
     });
     setRutina(data);
+    const exData = {};
+    exercisesSnap.docs.forEach((d) => {
+      exData[d.id] = d.data();
+    });
+    setExercisesMap(exData);
   }
 
   // ---------- auth ----------
@@ -314,19 +329,36 @@ export default function App() {
     await signOut(auth);
     setCurrentUser(null);
     setRutina({});
+    setExercisesMap({});
     setLoginForm({ username: "", password: "" });
     setScreen("login");
   }
 
   // ---------- rutina helpers ----------
   function getDay(dayKey) {
-    return rutina[dayKey] || { category: null, exercises: [] };
+    return rutina[dayKey] || { category: null, plan: [] };
   }
 
   async function saveDay(dayKey, dayData) {
     await setDoc(doc(db, "users", currentUser.uid, "rutina", dayKey), dayData);
     setRutina((prev) => ({ ...prev, [dayKey]: dayData }));
     return dayData;
+  }
+
+  async function saveExercise(exerciseId, exData) {
+    await setDoc(doc(db, "users", currentUser.uid, "exercises", exerciseId), exData);
+    setExercisesMap((prev) => ({ ...prev, [exerciseId]: exData }));
+    return exData;
+  }
+
+  function combinedDayExercises(dayKey) {
+    const day = getDay(dayKey);
+    return [...(day.plan || [])]
+      .map((p) => {
+        const ex = exercisesMap[p.exerciseId] || { name: "(eliminado)", custom: false, records: [] };
+        return { exerciseId: p.exerciseId, order: p.order, sets: p.sets, reps: p.reps, name: ex.name, custom: ex.custom, records: ex.records || [] };
+      })
+      .sort((a, b) => (a.order || 0) - (b.order || 0));
   }
 
   function openDay(dayKey) {
@@ -352,10 +384,11 @@ export default function App() {
     setScreen("addExercise");
   }
 
-  function openExerciseForm(name) {
+  function openExerciseForm(name, exerciseId) {
     const day = getDay(currentDayKey);
     setPendingExerciseName(name);
-    setExerciseForm({ nombre: name, orden: String((day.exercises || []).length + 1), series: "", repeticiones: "" });
+    setPendingExerciseId(exerciseId);
+    setExerciseForm({ nombre: name, orden: String((day.plan || []).length + 1), series: "", repeticiones: "" });
     setEditExercise(false);
     setCustomExerciseMode(false);
     setError("");
@@ -365,7 +398,8 @@ export default function App() {
   function openCustomExerciseForm() {
     const day = getDay(currentDayKey);
     setPendingExerciseName(null);
-    setExerciseForm({ nombre: "", orden: String((day.exercises || []).length + 1), series: "", repeticiones: "" });
+    setPendingExerciseId(null);
+    setExerciseForm({ nombre: "", orden: String((day.plan || []).length + 1), series: "", repeticiones: "" });
     setEditExercise(false);
     setCustomExerciseMode(true);
     setError("");
@@ -375,6 +409,7 @@ export default function App() {
   function openEditExercisePlan(ex) {
     setCurrentExercise(ex);
     setPendingExerciseName(ex.name);
+    setPendingExerciseId(ex.exerciseId);
     setExerciseForm({ nombre: ex.name, orden: String(ex.order || ""), series: String(ex.sets || ""), repeticiones: String(ex.reps || "") });
     setEditExercise(true);
     setCustomExerciseMode(!!ex.custom);
@@ -388,30 +423,35 @@ export default function App() {
     if (customExerciseMode && !nombre.trim()) return setError("Escribe el nombre del ejercicio.");
     if (!orden || !series || !repeticiones) return setError("Completa orden, series y repeticiones.");
     const day = getDay(currentDayKey);
-    let updatedExercises;
+    const name = customExerciseMode ? nombre.trim() : pendingExerciseName;
+
+    let exerciseId;
     if (editExercise && currentExercise) {
-      updatedExercises = (day.exercises || []).map((e) =>
-        e.id === currentExercise.id
-          ? { ...e, name: customExerciseMode ? nombre.trim() : e.name, order: Number(orden), sets: Number(series), reps: Number(repeticiones) }
-          : e
-      );
+      exerciseId = currentExercise.exerciseId;
+      if (customExerciseMode) {
+        const existing = exercisesMap[exerciseId] || { name, custom: true, records: [] };
+        await saveExercise(exerciseId, { ...existing, name });
+      }
+    } else if (pendingExerciseId) {
+      exerciseId = pendingExerciseId;
+      if (!exercisesMap[exerciseId]) {
+        await saveExercise(exerciseId, { name, custom: customExerciseMode, records: [] });
+      }
     } else {
-      const newExercise = {
-        id: uid(),
-        name: customExerciseMode ? nombre.trim() : pendingExerciseName,
-        order: Number(orden),
-        sets: Number(series),
-        reps: Number(repeticiones),
-        custom: customExerciseMode,
-        records: [],
-      };
-      updatedExercises = [...(day.exercises || []), newExercise];
+      exerciseId = "cx-" + uid();
+      await saveExercise(exerciseId, { name, custom: true, records: [] });
     }
-    const updatedDay = { ...day, exercises: updatedExercises };
-    await saveDay(currentDayKey, updatedDay);
+
+    let updatedPlan;
+    if (editExercise && currentExercise) {
+      updatedPlan = (day.plan || []).map((p) => (p.exerciseId === exerciseId ? { ...p, order: Number(orden), sets: Number(series), reps: Number(repeticiones) } : p));
+    } else {
+      updatedPlan = [...(day.plan || []), { exerciseId, order: Number(orden), sets: Number(series), reps: Number(repeticiones) }];
+    }
+    await saveDay(currentDayKey, { ...day, plan: updatedPlan });
+
     if (editExercise) {
-      const refreshed = updatedExercises.find((e) => e.id === currentExercise.id);
-      setCurrentExercise(refreshed);
+      setCurrentExercise({ ...currentExercise, name, order: Number(orden), sets: Number(series), reps: Number(repeticiones) });
     }
     flashSuccess("Plan guardado", () => {
       setEditExercise(false);
@@ -420,19 +460,19 @@ export default function App() {
   }
 
   async function handleDeleteExercisePlan() {
-    if (!window.confirm(`¿Eliminar ${currentExercise.name} de tu rutina? Se borrarán también sus registros.`)) return;
+    if (!window.confirm(`¿Quitar ${currentExercise.name} del plan de este día? Tu historial de PR se conserva.`)) return;
     const day = getDay(currentDayKey);
-    const updatedExercises = (day.exercises || []).filter((e) => e.id !== currentExercise.id);
-    await saveDay(currentDayKey, { ...day, exercises: updatedExercises });
+    const updatedPlan = (day.plan || []).filter((p) => p.exerciseId !== currentExercise.exerciseId);
+    await saveDay(currentDayKey, { ...day, plan: updatedPlan });
     setCurrentExercise(null);
     setScreen("dayDetail");
   }
 
   async function quickDeleteExercise(ex) {
-    if (!window.confirm(`¿Eliminar ${ex.name} de tu rutina? Se borrarán también sus registros.`)) return;
+    if (!window.confirm(`¿Quitar ${ex.name} del plan de este día? Tu historial de PR se conserva.`)) return;
     const day = getDay(currentDayKey);
-    const updatedExercises = (day.exercises || []).filter((e) => e.id !== ex.id);
-    await saveDay(currentDayKey, { ...day, exercises: updatedExercises });
+    const updatedPlan = (day.plan || []).filter((p) => p.exerciseId !== ex.exerciseId);
+    await saveDay(currentDayKey, { ...day, plan: updatedPlan });
   }
 
   function openExercise(ex) {
@@ -458,18 +498,17 @@ export default function App() {
     setError("");
     const { fecha, peso, series, repeticiones } = recordForm;
     if (!fecha || !peso) return setError("Ingresa la fecha y el peso.");
-    const day = getDay(currentDayKey);
-    const currentRecords = currentExercise.records || [];
+    const exerciseId = currentExercise.exerciseId;
+    const exData = exercisesMap[exerciseId] || { name: currentExercise.name, custom: currentExercise.custom, records: [] };
+    const currentRecords = exData.records || [];
     let updatedRecords;
     if (editRecordId) {
       updatedRecords = currentRecords.map((r) => (r.id === editRecordId ? { ...r, fecha, peso: Number(peso), series: Number(series) || 0, repeticiones: Number(repeticiones) || 0 } : r));
     } else {
       updatedRecords = [{ id: uid(), fecha, peso: Number(peso), series: Number(series) || 0, repeticiones: Number(repeticiones) || 0 }, ...currentRecords];
     }
-    const updatedExercise = { ...currentExercise, records: updatedRecords };
-    const updatedExercises = (day.exercises || []).map((e) => (e.id === currentExercise.id ? updatedExercise : e));
-    await saveDay(currentDayKey, { ...day, exercises: updatedExercises });
-    setCurrentExercise(updatedExercise);
+    await saveExercise(exerciseId, { ...exData, records: updatedRecords });
+    setCurrentExercise({ ...currentExercise, records: updatedRecords });
     flashSuccess("Registro guardado", () => {
       setEditRecordId(null);
       setScreen("exerciseDetail");
@@ -478,12 +517,11 @@ export default function App() {
 
   async function handleDeleteRecord() {
     if (!window.confirm("¿Eliminar este registro?")) return;
-    const day = getDay(currentDayKey);
-    const updatedRecords = (currentExercise.records || []).filter((r) => r.id !== editRecordId);
-    const updatedExercise = { ...currentExercise, records: updatedRecords };
-    const updatedExercises = (day.exercises || []).map((e) => (e.id === currentExercise.id ? updatedExercise : e));
-    await saveDay(currentDayKey, { ...day, exercises: updatedExercises });
-    setCurrentExercise(updatedExercise);
+    const exerciseId = currentExercise.exerciseId;
+    const exData = exercisesMap[exerciseId] || { name: currentExercise.name, custom: currentExercise.custom, records: [] };
+    const updatedRecords = (exData.records || []).filter((r) => r.id !== editRecordId);
+    await saveExercise(exerciseId, { ...exData, records: updatedRecords });
+    setCurrentExercise({ ...currentExercise, records: updatedRecords });
     setEditRecordId(null);
     setScreen("exerciseDetail");
   }
@@ -629,7 +667,7 @@ export default function App() {
   if (screen === "dayDetail" && currentDayKey) {
     const dayLabel = DAYS.find((d) => d.key === currentDayKey)?.label;
     const day = getDay(currentDayKey);
-    const exercises = sortedExercises(day);
+    const exercises = combinedDayExercises(currentDayKey);
     const isRestDay = day.category === "descanso";
     return (
       <div style={shell}>
@@ -652,7 +690,7 @@ export default function App() {
                 const pr = prOf(ex);
                 return (
                   <PillButton
-                    key={ex.id}
+                    key={ex.exerciseId}
                     onClick={() => openExercise(ex)}
                     onDelete={() => quickDeleteExercise(ex)}
                     subtitle={`${pr !== null ? `PR: ${pr} kg` : "Sin PR"} · ${ex.sets}x${ex.reps} reps`}
@@ -678,8 +716,9 @@ export default function App() {
   if (screen === "addExercise" && currentDayKey) {
     const day = getDay(currentDayKey);
     const category = CATEGORIES.find((c) => c.key === day.category);
-    const already = new Set((day.exercises || []).map((e) => e.name));
-    const available = (category?.exercises || []).filter((name) => !already.has(name));
+    const alreadyIds = new Set((day.plan || []).map((p) => p.exerciseId));
+    const available = (category?.exercises || []).filter((name) => !alreadyIds.has("fx-" + slugify(name)));
+    const customReusable = Object.entries(exercisesMap).filter(([id, ex]) => ex.custom && !alreadyIds.has(id));
     return (
       <div style={shell}>
         <TopBar title="Agregar ejercicio" onBack={() => setScreen("dayDetail")} />
@@ -687,14 +726,26 @@ export default function App() {
           <div style={{ color: "#8a8580", fontSize: 14, marginBottom: 16 }}>Ya agregaste todos los ejercicios de {categoryLabel(day.category)}.</div>
         ) : (
           available.map((name) => (
-            <PillButton key={name} compact onClick={() => openExerciseForm(name)}>
+            <PillButton key={name} compact onClick={() => openExerciseForm(name, "fx-" + slugify(name))}>
               {name}
             </PillButton>
           ))
         )}
+
+        {customReusable.length > 0 && (
+          <>
+            <div style={{ fontSize: 12, color: "#8a8580", fontWeight: 600, letterSpacing: 0.3, margin: "16px 0 8px" }}>TUS EJERCICIOS PERSONALIZADOS</div>
+            {customReusable.map(([id, ex]) => (
+              <PillButton key={id} compact onClick={() => openExerciseForm(ex.name, id)}>
+                {ex.name}
+              </PillButton>
+            ))}
+          </>
+        )}
+
         <div style={{ marginTop: 6 }}>
           <DashedButton onClick={openCustomExerciseForm}>
-            <Plus size={17} /> Ejercicio personalizado
+            <Plus size={17} /> Ejercicio personalizado nuevo
           </DashedButton>
         </div>
       </div>
@@ -717,7 +768,7 @@ export default function App() {
         <PrimaryButton onClick={handleSaveExercisePlan}>{editExercise ? "Guardar cambios" : "Agregar a mi rutina"}</PrimaryButton>
         {editExercise && (
           <button onClick={handleDeleteExercisePlan} style={{ width: "100%", padding: "12px", marginTop: 10, background: "transparent", border: "none", color: "#e07856", fontSize: 14, cursor: "pointer" }}>
-            Eliminar ejercicio de mi rutina
+            Quitar del plan de este día
           </button>
         )}
       </div>
