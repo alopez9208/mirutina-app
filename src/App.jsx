@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { Dumbbell, Plus, ChevronRight, ArrowLeft, Check, Eye, EyeOff, Trophy } from "lucide-react";
+import { Dumbbell, Plus, ChevronRight, ArrowLeft, Check, Eye, EyeOff, Trophy, Trash2 } from "lucide-react";
 import { auth, db } from "./firebase";
 import {
   createUserWithEmailAndPassword,
@@ -52,8 +52,8 @@ function sortByFecha(arr) {
 }
 
 // ---------- small UI atoms ----------
-function PillButton({ children, onClick, subtitle, compact, muted }) {
-  return (
+function PillButton({ children, onClick, subtitle, compact, muted, onDelete }) {
+  const btn = (
     <button
       onClick={onClick}
       style={{
@@ -70,7 +70,6 @@ function PillButton({ children, onClick, subtitle, compact, muted }) {
         fontWeight: 500,
         textAlign: "left",
         cursor: "pointer",
-        marginBottom: compact ? 8 : 0,
       }}
     >
       <span style={{ flex: 1, minWidth: 0 }}>
@@ -81,6 +80,18 @@ function PillButton({ children, onClick, subtitle, compact, muted }) {
       </span>
       <ChevronRight size={18} color="#6e6a65" style={{ flexShrink: 0 }} />
     </button>
+  );
+  if (!onDelete) return <div style={{ marginBottom: compact ? 8 : 10 }}>{btn}</div>;
+  return (
+    <div style={{ display: "flex", gap: 8, marginBottom: compact ? 8 : 10 }}>
+      <div style={{ flex: 1, minWidth: 0 }}>{btn}</div>
+      <button
+        onClick={onDelete}
+        style={{ width: 44, flexShrink: 0, borderRadius: compact ? 16 : 999, border: "1px solid #33312e", background: "#1f1e1c", color: "#e0725e", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}
+      >
+        <Trash2 size={17} />
+      </button>
+    </div>
   );
 }
 
@@ -202,7 +213,8 @@ export default function App() {
   const [loginForm, setLoginForm] = useState({ username: "", password: "" });
   const [registerForm, setRegisterForm] = useState({ email: "", username: "", password: "", confirm: "" });
   const [recoverForm, setRecoverForm] = useState({ username: "" });
-  const [exerciseForm, setExerciseForm] = useState({ orden: "", series: "", repeticiones: "" });
+  const [exerciseForm, setExerciseForm] = useState({ nombre: "", orden: "", series: "", repeticiones: "" });
+  const [customExerciseMode, setCustomExerciseMode] = useState(false);
   const [recordForm, setRecordForm] = useState({ fecha: todayISO(), peso: "", series: "", repeticiones: "" });
 
   useEffect(() => {
@@ -342,8 +354,19 @@ export default function App() {
   function openExerciseForm(name) {
     const day = getDay(currentDayKey);
     setPendingExerciseName(name);
-    setExerciseForm({ orden: String((day.exercises || []).length + 1), series: "", repeticiones: "" });
+    setExerciseForm({ nombre: name, orden: String((day.exercises || []).length + 1), series: "", repeticiones: "" });
     setEditExercise(false);
+    setCustomExerciseMode(false);
+    setError("");
+    setScreen("exerciseForm");
+  }
+
+  function openCustomExerciseForm() {
+    const day = getDay(currentDayKey);
+    setPendingExerciseName(null);
+    setExerciseForm({ nombre: "", orden: String((day.exercises || []).length + 1), series: "", repeticiones: "" });
+    setEditExercise(false);
+    setCustomExerciseMode(true);
     setError("");
     setScreen("exerciseForm");
   }
@@ -351,24 +374,36 @@ export default function App() {
   function openEditExercisePlan(ex) {
     setCurrentExercise(ex);
     setPendingExerciseName(ex.name);
-    setExerciseForm({ orden: String(ex.order || ""), series: String(ex.sets || ""), repeticiones: String(ex.reps || "") });
+    setExerciseForm({ nombre: ex.name, orden: String(ex.order || ""), series: String(ex.sets || ""), repeticiones: String(ex.reps || "") });
     setEditExercise(true);
+    setCustomExerciseMode(!!ex.custom);
     setError("");
     setScreen("exerciseForm");
   }
 
   async function handleSaveExercisePlan() {
     setError("");
-    const { orden, series, repeticiones } = exerciseForm;
+    const { nombre, orden, series, repeticiones } = exerciseForm;
+    if (customExerciseMode && !nombre.trim()) return setError("Escribe el nombre del ejercicio.");
     if (!orden || !series || !repeticiones) return setError("Completa orden, series y repeticiones.");
     const day = getDay(currentDayKey);
     let updatedExercises;
     if (editExercise && currentExercise) {
       updatedExercises = (day.exercises || []).map((e) =>
-        e.id === currentExercise.id ? { ...e, order: Number(orden), sets: Number(series), reps: Number(repeticiones) } : e
+        e.id === currentExercise.id
+          ? { ...e, name: customExerciseMode ? nombre.trim() : e.name, order: Number(orden), sets: Number(series), reps: Number(repeticiones) }
+          : e
       );
     } else {
-      const newExercise = { id: uid(), name: pendingExerciseName, order: Number(orden), sets: Number(series), reps: Number(repeticiones), records: [] };
+      const newExercise = {
+        id: uid(),
+        name: customExerciseMode ? nombre.trim() : pendingExerciseName,
+        order: Number(orden),
+        sets: Number(series),
+        reps: Number(repeticiones),
+        custom: customExerciseMode,
+        records: [],
+      };
       updatedExercises = [...(day.exercises || []), newExercise];
     }
     const updatedDay = { ...day, exercises: updatedExercises };
@@ -390,6 +425,13 @@ export default function App() {
     await saveDay(currentDayKey, { ...day, exercises: updatedExercises });
     setCurrentExercise(null);
     setScreen("dayDetail");
+  }
+
+  async function quickDeleteExercise(ex) {
+    if (!window.confirm(`¿Eliminar ${ex.name} de tu rutina? Se borrarán también sus registros.`)) return;
+    const day = getDay(currentDayKey);
+    const updatedExercises = (day.exercises || []).filter((e) => e.id !== ex.id);
+    await saveDay(currentDayKey, { ...day, exercises: updatedExercises });
   }
 
   function openExercise(ex) {
@@ -598,7 +640,12 @@ export default function App() {
           exercises.map((ex) => {
             const pr = prOf(ex);
             return (
-              <PillButton key={ex.id} onClick={() => openExercise(ex)} subtitle={`${pr !== null ? `PR: ${pr} kg` : "Sin PR"} · ${ex.sets}x${ex.reps} reps`}>
+              <PillButton
+                key={ex.id}
+                onClick={() => openExercise(ex)}
+                onDelete={() => quickDeleteExercise(ex)}
+                subtitle={`${pr !== null ? `PR: ${pr} kg` : "Sin PR"} · ${ex.sets}x${ex.reps} reps`}
+              >
                 {ex.name}
               </PillButton>
             );
@@ -624,7 +671,7 @@ export default function App() {
       <div style={shell}>
         <TopBar title="Agregar ejercicio" onBack={() => setScreen("dayDetail")} />
         {available.length === 0 ? (
-          <div style={{ color: "#8a8580", fontSize: 14 }}>Ya agregaste todos los ejercicios de {categoryLabel(day.category)}.</div>
+          <div style={{ color: "#8a8580", fontSize: 14, marginBottom: 16 }}>Ya agregaste todos los ejercicios de {categoryLabel(day.category)}.</div>
         ) : (
           available.map((name) => (
             <PillButton key={name} compact onClick={() => openExerciseForm(name)}>
@@ -632,6 +679,11 @@ export default function App() {
             </PillButton>
           ))
         )}
+        <div style={{ marginTop: 6 }}>
+          <DashedButton onClick={openCustomExerciseForm}>
+            <Plus size={17} /> Ejercicio personalizado
+          </DashedButton>
+        </div>
       </div>
     );
   }
@@ -641,7 +693,10 @@ export default function App() {
     return (
       <div style={shell}>
         {success && <SuccessOverlay message={success} />}
-        <TopBar title={pendingExerciseName} onBack={() => setScreen(editExercise ? "exerciseDetail" : "addExercise")} />
+        <TopBar title={customExerciseMode ? "Ejercicio personalizado" : pendingExerciseName} onBack={() => setScreen(editExercise ? "exerciseDetail" : "addExercise")} />
+        {customExerciseMode && (
+          <Field label="Nombre del ejercicio" value={exerciseForm.nombre} onChange={(e) => setExerciseForm({ ...exerciseForm, nombre: e.target.value })} placeholder="Ej. Pecho barra amarilla" />
+        )}
         <Field label="Orden en el día" type="number" min="1" value={exerciseForm.orden} onChange={(e) => setExerciseForm({ ...exerciseForm, orden: e.target.value })} placeholder="Ej. 1" />
         <Field label="Series" type="number" min="1" value={exerciseForm.series} onChange={(e) => setExerciseForm({ ...exerciseForm, series: e.target.value })} placeholder="Ej. 3" />
         <Field label="Repeticiones" type="number" min="1" value={exerciseForm.repeticiones} onChange={(e) => setExerciseForm({ ...exerciseForm, repeticiones: e.target.value })} placeholder="Ej. 10" />
