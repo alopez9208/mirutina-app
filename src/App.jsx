@@ -241,6 +241,7 @@ export default function App() {
   const [currentUser, setCurrentUser] = useState(null);
   const [rutina, setRutina] = useState({});
   const [exercisesMap, setExercisesMap] = useState({});
+  const [customRoutinesMap, setCustomRoutinesMap] = useState({});
   const [currentDayKey, setCurrentDayKey] = useState(null);
   const [changingCategory, setChangingCategory] = useState(false);
   const [customLabelInput, setCustomLabelInput] = useState("");
@@ -281,9 +282,10 @@ export default function App() {
   }
 
   async function loadRutina(user) {
-    const [rutinaSnap, exercisesSnap] = await Promise.all([
+    const [rutinaSnap, exercisesSnap, routinesSnap] = await Promise.all([
       getDocs(collection(db, "users", user.uid, "rutina")),
       getDocs(collection(db, "users", user.uid, "exercises")),
+      getDocs(collection(db, "users", user.uid, "customRoutines")),
     ]);
     const data = {};
     rutinaSnap.docs.forEach((d) => {
@@ -295,6 +297,11 @@ export default function App() {
       exData[d.id] = d.data();
     });
     setExercisesMap(exData);
+    const routinesData = {};
+    routinesSnap.docs.forEach((d) => {
+      routinesData[d.id] = d.data();
+    });
+    setCustomRoutinesMap(routinesData);
   }
 
   // ---------- auth ----------
@@ -362,6 +369,7 @@ export default function App() {
     setCurrentUser(null);
     setRutina({});
     setExercisesMap({});
+    setCustomRoutinesMap({});
     setLoginForm({ username: "", password: "" });
     setScreen("login");
   }
@@ -383,6 +391,12 @@ export default function App() {
     return exData;
   }
 
+  async function saveCustomRoutine(id, data) {
+    await setDoc(doc(db, "users", currentUser.uid, "customRoutines", id), data);
+    setCustomRoutinesMap((prev) => ({ ...prev, [id]: data }));
+    return data;
+  }
+
   function combinedDayExercises(dayKey) {
     const day = getDay(dayKey);
     return [...(day.plan || [])]
@@ -401,7 +415,19 @@ export default function App() {
 
   async function chooseCategory(catKey) {
     const day = getDay(currentDayKey);
-    const updated = { ...day, category: catKey, customLabel: undefined };
+    const updated = { ...day, category: catKey, customRoutineId: undefined };
+    await saveDay(currentDayKey, updated);
+    if (changingCategory) {
+      setChangingCategory(false);
+      setScreen("dayDetail");
+    } else {
+      setScreen("addExercise");
+    }
+  }
+
+  async function selectCustomRoutine(routineId) {
+    const day = getDay(currentDayKey);
+    const updated = { ...day, category: "personalizada", customRoutineId: routineId };
     await saveDay(currentDayKey, updated);
     if (changingCategory) {
       setChangingCategory(false);
@@ -412,28 +438,29 @@ export default function App() {
   }
 
   function openPersonalizadaName() {
-    const day = getDay(currentDayKey);
-    setCustomLabelInput(day.category === "personalizada" ? day.customLabel || "" : "");
+    setCustomLabelInput("");
     setError("");
     setScreen("personalizadaName");
   }
 
   async function confirmPersonalizada() {
     if (!customLabelInput.trim()) return setError("Ponle un nombre a tu rutina.");
-    const day = getDay(currentDayKey);
-    const updated = { ...day, category: "personalizada", customLabel: customLabelInput.trim() };
-    await saveDay(currentDayKey, updated);
+    const routineId = "cr-" + uid();
+    await saveCustomRoutine(routineId, { name: customLabelInput.trim(), hidden: false });
     setError("");
-    if (changingCategory) {
-      setChangingCategory(false);
-      setScreen("dayDetail");
-    } else {
-      setScreen("addExercise");
-    }
+    await selectCustomRoutine(routineId);
+  }
+
+  async function hideCustomRoutine(id, name) {
+    if (!window.confirm(`¿Ocultar "${name}" de la lista? Los días que ya la usan la seguirán mostrando.`)) return;
+    const existing = customRoutinesMap[id] || { name, hidden: false };
+    await saveCustomRoutine(id, { ...existing, hidden: true });
   }
 
   function dayRoutineLabel(day) {
-    if (day.category === "personalizada") return day.customLabel || "Personalizada";
+    if (day.category === "personalizada") {
+      return customRoutinesMap[day.customRoutineId]?.name || day.customLabel || "Personalizada";
+    }
     return categoryLabel(day.category);
   }
 
@@ -703,6 +730,7 @@ export default function App() {
   // ---------- CHOOSE CATEGORY ----------
   if (screen === "chooseCategory" && currentDayKey) {
     const dayLabel = DAYS.find((d) => d.key === currentDayKey)?.label;
+    const visibleRoutines = Object.entries(customRoutinesMap).filter(([id, r]) => !r.hidden);
     return (
       <div style={shell}>
         <TopBar title={dayLabel} onBack={() => { setChangingCategory(false); setScreen(getDay(currentDayKey).category ? "dayDetail" : "days"); }} />
@@ -712,14 +740,21 @@ export default function App() {
             {c.label}
           </PillButton>
         ))}
-        <div style={{ marginTop: 10 }}>
-          <PillButton compact muted onClick={openPersonalizadaName} subtitle="Mezcla ejercicios de cualquier categoría, con tu propio nombre">
-            Personalizada
-          </PillButton>
+        <div style={{ marginTop: 10, marginBottom: 20 }}>
           <PillButton compact muted onClick={() => chooseCategory("descanso")} subtitle="Día libre, sin ejercicios">
             Descanso
           </PillButton>
         </div>
+
+        <div style={{ fontSize: 12, color: "#8a8580", fontWeight: 700, letterSpacing: 0.4, marginBottom: 8 }}>PERSONALIZADA</div>
+        {visibleRoutines.map(([id, r]) => (
+          <PillButton key={id} compact onClick={() => selectCustomRoutine(id)} onDelete={() => hideCustomRoutine(id, r.name)}>
+            {r.name}
+          </PillButton>
+        ))}
+        <DashedButton onClick={openPersonalizadaName}>
+          <Plus size={17} /> Nueva rutina personalizada
+        </DashedButton>
       </div>
     );
   }
