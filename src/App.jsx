@@ -584,25 +584,72 @@ async function chooseCategory(catKey) {
   }
 
   async function handleSaveRecord() {
-    setError("");
-    const { fecha, peso, series, repeticiones } = recordForm;
-    if (!fecha || !peso) return setError("Ingresa la fecha y el peso.");
+  setError("");
+
+  const { fecha, peso, series, repeticiones } = recordForm;
+
+  if (!fecha || !peso) {
+    return setError("Ingresa la fecha y el peso.");
+  }
+
+  try {
     const exerciseId = currentExercise.exerciseId;
-    const exData = exercisesMap[exerciseId] || { name: currentExercise.name, custom: currentExercise.custom, records: [] };
+
+    const exData = exercisesMap[exerciseId] || {
+      name: currentExercise.name,
+      custom: currentExercise.custom,
+      records: []
+    };
+
     const currentRecords = exData.records || [];
+
     let updatedRecords;
+
     if (editRecordId) {
-      updatedRecords = currentRecords.map((r) => (r.id === editRecordId ? { ...r, fecha, peso: Number(peso), series: Number(series) || 0, repeticiones: Number(repeticiones) || 0 } : r));
+      updatedRecords = currentRecords.map((r) =>
+        r.id === editRecordId
+          ? {
+              ...r,
+              fecha,
+              peso: Number(peso),
+              series: Number(series) || 0,
+              repeticiones: Number(repeticiones) || 0
+            }
+          : r
+      );
     } else {
-      updatedRecords = [{ id: uid(), fecha, peso: Number(peso), series: Number(series) || 0, repeticiones: Number(repeticiones) || 0 }, ...currentRecords];
+      updatedRecords = [
+        {
+          id: uid(),
+          fecha,
+          peso: Number(peso),
+          series: Number(series) || 0,
+          repeticiones: Number(repeticiones) || 0
+        },
+        ...currentRecords
+      ];
     }
-    await saveExercise(exerciseId, { ...exData, records: updatedRecords });
-    setCurrentExercise({ ...currentExercise, records: updatedRecords });
+
+    await saveExercise(exerciseId, {
+      ...exData,
+      records: updatedRecords
+    });
+
+    setCurrentExercise({
+      ...currentExercise,
+      records: updatedRecords
+    });
+
     flashSuccess("Registro guardado", () => {
       setEditRecordId(null);
       setScreen("exerciseDetail");
     });
+
+  } catch (err) {
+    console.error("Error al guardar registro:", err);
+    setError("No se pudo guardar el registro. Revisa Firebase.");
   }
+}
 
   async function handleDeleteRecord() {
     if (!window.confirm("¿Eliminar este registro?")) return;
