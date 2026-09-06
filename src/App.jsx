@@ -413,17 +413,21 @@ export default function App() {
     setScreen(day.category ? "dayDetail" : "chooseCategory");
   }
 
-  async function chooseCategory(catKey) {
-    const day = getDay(currentDayKey);
-    const updated = { ...day, category: catKey, customRoutineId: undefined };
-    await saveDay(currentDayKey, updated);
-    if (changingCategory) {
-      setChangingCategory(false);
-      setScreen("dayDetail");
-    } else {
-      setScreen("addExercise");
-    }
+async function chooseCategory(catKey) {
+  const day = getDay(currentDayKey);
+
+  const updated = { ...day, category: catKey };
+  delete updated.customRoutineId;
+
+  await saveDay(currentDayKey, updated);
+
+  if (changingCategory) {
+    setChangingCategory(false);
+    setScreen("dayDetail");
+  } else {
+    setScreen("addExercise");
   }
+}
 
   async function selectCustomRoutine(routineId) {
     const day = getDay(currentDayKey);
