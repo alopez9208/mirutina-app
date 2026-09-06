@@ -25,12 +25,12 @@ const DAYS = [
 
 const CATEGORIES = [
   { key: "pecho", label: "Pecho", exercises: ["Press plano con barra", "Press plano con mancuernas", "Press inclinado con barra", "Press inclinado con mancuernas", "Press en máquina", "Aperturas", "Cruce de poleas", "Fondos en paralelas"] },
-  { key: "espalda", label: "Espalda", exercises: ["Peso muerto espalda", "Dominadas", "Jalón al pecho", "Remo con barra", "Remo con mancuerna", "Pullover en polea", "Hiperextensiones"] },
+  { key: "espalda", label: "Espalda", exercises: ["Peso muerto", "Dominadas", "Jalón al pecho", "Remo con barra", "Remo con mancuerna", "Pullover en polea", "Hiperextensiones"] },
   { key: "biceps", label: "Bíceps", exercises: ["Curl con barra", "Curl con mancuernas", "Curl martillo", "Curl predicador", "Curl concentrado", "Curl en máquina"] },
   { key: "triceps", label: "Tríceps", exercises: ["Press cerrado", "Fondos para tríceps", "Extensión de tríceps en polea", "Press francés", "Patada de tríceps"] },
   { key: "hombros", label: "Hombros", exercises: ["Press militar con barra", "Press militar con mancuernas", "Press Arnold", "Elevaciones laterales", "Elevaciones frontales", "Pájaros (posterior)", "Face pull en polea"] },
   { key: "cuadriceps", label: "Cuádriceps", exercises: ["Sentadilla libre", "Sentadilla Hack", "Sentadilla Smith", "Prensa", "Extensión de piernas", "Sentadilla frontal", "Zancadas", "Búlgara"] },
-  { key: "femorales", label: "Femorales", exercises: ["Peso muerto", "Curl femoral sentado", "Curl femoral acostado", "Curl femoral de pie"] },
+  { key: "femorales", label: "Femorales", exercises: ["Peso muerto rumano", "Curl femoral sentado", "Curl femoral acostado", "Curl femoral de pie"] },
   { key: "gluteos", label: "Glúteos", exercises: ["Hip Thrust", "Patada de glúteo en polea", "Adducción", "Abducción", "Sentadilla profunda", "Búlgara"] },
 ];
 
@@ -243,6 +243,7 @@ export default function App() {
   const [exercisesMap, setExercisesMap] = useState({});
   const [currentDayKey, setCurrentDayKey] = useState(null);
   const [changingCategory, setChangingCategory] = useState(false);
+  const [customLabelInput, setCustomLabelInput] = useState("");
   const [currentExercise, setCurrentExercise] = useState(null);
   const [pendingExerciseName, setPendingExerciseName] = useState(null);
   const [pendingExerciseId, setPendingExerciseId] = useState(null);
@@ -400,7 +401,7 @@ export default function App() {
 
   async function chooseCategory(catKey) {
     const day = getDay(currentDayKey);
-    const updated = { ...day, category: catKey };
+    const updated = { ...day, category: catKey, customLabel: undefined };
     await saveDay(currentDayKey, updated);
     if (changingCategory) {
       setChangingCategory(false);
@@ -408,6 +409,32 @@ export default function App() {
     } else {
       setScreen("addExercise");
     }
+  }
+
+  function openPersonalizadaName() {
+    const day = getDay(currentDayKey);
+    setCustomLabelInput(day.category === "personalizada" ? day.customLabel || "" : "");
+    setError("");
+    setScreen("personalizadaName");
+  }
+
+  async function confirmPersonalizada() {
+    if (!customLabelInput.trim()) return setError("Ponle un nombre a tu rutina.");
+    const day = getDay(currentDayKey);
+    const updated = { ...day, category: "personalizada", customLabel: customLabelInput.trim() };
+    await saveDay(currentDayKey, updated);
+    setError("");
+    if (changingCategory) {
+      setChangingCategory(false);
+      setScreen("dayDetail");
+    } else {
+      setScreen("addExercise");
+    }
+  }
+
+  function dayRoutineLabel(day) {
+    if (day.category === "personalizada") return day.customLabel || "Personalizada";
+    return categoryLabel(day.category);
   }
 
   function openAddExercise() {
@@ -664,7 +691,7 @@ export default function App() {
         {DAYS.map((d) => {
           const day = getDay(d.key);
           return (
-            <PillButton key={d.key} compact onClick={() => openDay(d.key)} subtitle={day.category ? categoryLabel(day.category) : "Sin rutina asignada"} muted={!day.category}>
+            <PillButton key={d.key} compact onClick={() => openDay(d.key)} subtitle={day.category ? dayRoutineLabel(day) : "Sin rutina asignada"} muted={!day.category}>
               {d.label}
             </PillButton>
           );
@@ -686,13 +713,27 @@ export default function App() {
           </PillButton>
         ))}
         <div style={{ marginTop: 10 }}>
-          <PillButton compact muted onClick={() => chooseCategory("personalizada")} subtitle="Mezcla ejercicios de cualquier categoría">
+          <PillButton compact muted onClick={openPersonalizadaName} subtitle="Mezcla ejercicios de cualquier categoría, con tu propio nombre">
             Personalizada
           </PillButton>
           <PillButton compact muted onClick={() => chooseCategory("descanso")} subtitle="Día libre, sin ejercicios">
             Descanso
           </PillButton>
         </div>
+      </div>
+    );
+  }
+
+  // ---------- NOMBRE DE RUTINA PERSONALIZADA ----------
+  if (screen === "personalizadaName" && currentDayKey) {
+    const dayLabel = DAYS.find((d) => d.key === currentDayKey)?.label;
+    return (
+      <div style={shell}>
+        <TopBar title={dayLabel} onBack={() => setScreen("chooseCategory")} />
+        <div style={{ fontSize: 20, fontWeight: 700, marginBottom: 16 }}>Nombra tu rutina</div>
+        <Field label="Nombre de la rutina" value={customLabelInput} onChange={(e) => setCustomLabelInput(e.target.value)} placeholder="Ej. Superior" />
+        {error && <div style={{ color: "#e0725e", fontSize: 13.5, marginBottom: 12 }}>{error}</div>}
+        <PrimaryButton onClick={confirmPersonalizada}>Continuar</PrimaryButton>
       </div>
     );
   }
@@ -710,7 +751,7 @@ export default function App() {
           onClick={() => { setChangingCategory(true); setScreen("chooseCategory"); }}
           style={{ background: "none", border: "none", color: "#6e6a65", fontSize: 12, cursor: "pointer", padding: 0, marginBottom: 20, display: "block" }}
         >
-          Rutina: {categoryLabel(day.category)} · cambiar
+          Rutina: {dayRoutineLabel(day)} · cambiar
         </button>
 
         {isRestDay ? (
