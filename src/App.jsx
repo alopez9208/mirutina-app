@@ -28,6 +28,7 @@ const CATEGORIES = [
   { key: "espalda", label: "Espalda", exercises: ["Peso muerto", "Dominadas", "Jalón al pecho", "Remo con barra", "Remo con mancuerna", "Pullover en polea", "Hiperextensiones"] },
   { key: "biceps", label: "Bíceps", exercises: ["Curl con barra", "Curl con mancuernas", "Curl martillo", "Curl predicador", "Curl concentrado", "Curl en máquina"] },
   { key: "triceps", label: "Tríceps", exercises: ["Press cerrado", "Fondos para tríceps", "Extensión de tríceps en polea", "Press francés", "Patada de tríceps"] },
+  { key: "hombros", label: "Hombros", exercises: ["Press militar con barra", "Press militar con mancuernas", "Press Arnold", "Elevaciones laterales", "Elevaciones frontales", "Pájaros (posterior)", "Face pull en polea"] },
   { key: "cuadriceps", label: "Cuádriceps", exercises: ["Sentadilla libre", "Sentadilla Hack", "Sentadilla Smith", "Prensa", "Extensión de piernas", "Sentadilla frontal", "Zancadas", "Búlgara"] },
   { key: "femorales", label: "Femorales", exercises: ["Peso muerto rumano", "Curl femoral sentado", "Curl femoral acostado", "Curl femoral de pie"] },
   { key: "gluteos", label: "Glúteos", exercises: ["Hip Thrust", "Patada de glúteo en polea", "Adducción", "Abducción", "Sentadilla profunda", "Búlgara"] },
@@ -44,6 +45,7 @@ function slugify(str) {
 
 function categoryLabel(key) {
   if (key === "descanso") return "Descanso";
+  if (key === "personalizada") return "Personalizada";
   return CATEGORIES.find((c) => c.key === key)?.label || "";
 }
 
@@ -119,6 +121,35 @@ function Field({ label, ...props }) {
           outline: "none",
         }}
       />
+    </label>
+  );
+}
+
+function SelectField({ label, value, onChange, options }) {
+  return (
+    <label style={{ display: "block", marginBottom: 14 }}>
+      <div style={{ fontSize: 12.5, color: "#a39d95", marginBottom: 6, fontWeight: 500, letterSpacing: 0.2 }}>{label}</div>
+      <select
+        value={value}
+        onChange={onChange}
+        style={{
+          width: "100%",
+          boxSizing: "border-box",
+          padding: "13px 14px",
+          borderRadius: 12,
+          border: "1px solid #35322e",
+          background: "#1a1917",
+          color: "#f2ede6",
+          fontSize: 15.5,
+          outline: "none",
+        }}
+      >
+        {options.map((o) => (
+          <option key={o.value} value={o.value}>
+            {o.label}
+          </option>
+        ))}
+      </select>
     </label>
   );
 }
@@ -221,7 +252,7 @@ export default function App() {
   const [loginForm, setLoginForm] = useState({ username: "", password: "" });
   const [registerForm, setRegisterForm] = useState({ email: "", username: "", password: "", confirm: "" });
   const [recoverForm, setRecoverForm] = useState({ username: "" });
-  const [exerciseForm, setExerciseForm] = useState({ nombre: "", orden: "", series: "", repeticiones: "" });
+  const [exerciseForm, setExerciseForm] = useState({ nombre: "", categoria: "pecho", orden: "", series: "", repeticiones: "" });
   const [customExerciseMode, setCustomExerciseMode] = useState(false);
   const [recordForm, setRecordForm] = useState({ fecha: todayISO(), peso: "", series: "", repeticiones: "" });
 
@@ -388,7 +419,7 @@ export default function App() {
     const day = getDay(currentDayKey);
     setPendingExerciseName(name);
     setPendingExerciseId(exerciseId);
-    setExerciseForm({ nombre: name, orden: String((day.plan || []).length + 1), series: "", repeticiones: "" });
+    setExerciseForm({ nombre: name, categoria: "pecho", orden: String((day.plan || []).length + 1), series: "", repeticiones: "" });
     setEditExercise(false);
     setCustomExerciseMode(false);
     setError("");
@@ -399,7 +430,7 @@ export default function App() {
     const day = getDay(currentDayKey);
     setPendingExerciseName(null);
     setPendingExerciseId(null);
-    setExerciseForm({ nombre: "", orden: String((day.plan || []).length + 1), series: "", repeticiones: "" });
+    setExerciseForm({ nombre: "", categoria: "pecho", orden: String((day.plan || []).length + 1), series: "", repeticiones: "" });
     setEditExercise(false);
     setCustomExerciseMode(true);
     setError("");
@@ -410,7 +441,7 @@ export default function App() {
     setCurrentExercise(ex);
     setPendingExerciseName(ex.name);
     setPendingExerciseId(ex.exerciseId);
-    setExerciseForm({ nombre: ex.name, orden: String(ex.order || ""), series: String(ex.sets || ""), repeticiones: String(ex.reps || "") });
+    setExerciseForm({ nombre: ex.name, categoria: ex.category || "pecho", orden: String(ex.order || ""), series: String(ex.sets || ""), repeticiones: String(ex.reps || "") });
     setEditExercise(true);
     setCustomExerciseMode(!!ex.custom);
     setError("");
@@ -419,7 +450,7 @@ export default function App() {
 
   async function handleSaveExercisePlan() {
     setError("");
-    const { nombre, orden, series, repeticiones } = exerciseForm;
+    const { nombre, categoria, orden, series, repeticiones } = exerciseForm;
     if (customExerciseMode && !nombre.trim()) return setError("Escribe el nombre del ejercicio.");
     if (!orden || !series || !repeticiones) return setError("Completa orden, series y repeticiones.");
     const day = getDay(currentDayKey);
@@ -430,16 +461,16 @@ export default function App() {
       exerciseId = currentExercise.exerciseId;
       if (customExerciseMode) {
         const existing = exercisesMap[exerciseId] || { name, custom: true, records: [] };
-        await saveExercise(exerciseId, { ...existing, name });
+        await saveExercise(exerciseId, { ...existing, name, category: categoria });
       }
     } else if (pendingExerciseId) {
       exerciseId = pendingExerciseId;
       if (!exercisesMap[exerciseId]) {
-        await saveExercise(exerciseId, { name, custom: customExerciseMode, records: [] });
+        await saveExercise(exerciseId, { name, custom: customExerciseMode, category: customExerciseMode ? categoria : undefined, records: [] });
       }
     } else {
       exerciseId = "cx-" + uid();
-      await saveExercise(exerciseId, { name, custom: true, records: [] });
+      await saveExercise(exerciseId, { name, custom: true, category: categoria, records: [] });
     }
 
     let updatedPlan;
@@ -655,6 +686,9 @@ export default function App() {
           </PillButton>
         ))}
         <div style={{ marginTop: 10 }}>
+          <PillButton compact muted onClick={() => chooseCategory("personalizada")} subtitle="Mezcla ejercicios de cualquier categoría">
+            Personalizada
+          </PillButton>
           <PillButton compact muted onClick={() => chooseCategory("descanso")} subtitle="Día libre, sin ejercicios">
             Descanso
           </PillButton>
@@ -712,42 +746,50 @@ export default function App() {
     );
   }
 
-  // ---------- ADD EXERCISE (pick from category) ----------
+  // ---------- ADD EXERCISE (todas las categorías) ----------
   if (screen === "addExercise" && currentDayKey) {
     const day = getDay(currentDayKey);
-    const category = CATEGORIES.find((c) => c.key === day.category);
     const alreadyIds = new Set((day.plan || []).map((p) => p.exerciseId));
-    const available = (category?.exercises || []).filter((name) => !alreadyIds.has("fx-" + slugify(name)));
-    const customReusable = Object.entries(exercisesMap).filter(([id, ex]) => ex.custom && !alreadyIds.has(id));
+    const sections = CATEGORIES.map((cat) => {
+      const fixed = cat.exercises.filter((name) => !alreadyIds.has("fx-" + slugify(name))).map((name) => ({ id: "fx-" + slugify(name), name }));
+      const customs = Object.entries(exercisesMap)
+        .filter(([id, ex]) => ex.custom && ex.category === cat.key && !alreadyIds.has(id))
+        .map(([id, ex]) => ({ id, name: ex.name }));
+      return { key: cat.key, label: cat.label, items: [...fixed, ...customs] };
+    }).filter((s) => s.items.length > 0);
+    const orphanCustoms = Object.entries(exercisesMap).filter(([id, ex]) => ex.custom && !ex.category && !alreadyIds.has(id));
+
     return (
       <div style={shell}>
         <TopBar title="Agregar ejercicio" onBack={() => setScreen("dayDetail")} />
-        {available.length === 0 ? (
-          <div style={{ color: "#8a8580", fontSize: 14, marginBottom: 16 }}>Ya agregaste todos los ejercicios de {categoryLabel(day.category)}.</div>
-        ) : (
-          available.map((name) => (
-            <PillButton key={name} compact onClick={() => openExerciseForm(name, "fx-" + slugify(name))}>
-              {name}
-            </PillButton>
-          ))
+        {sections.length === 0 && orphanCustoms.length === 0 && (
+          <div style={{ color: "#8a8580", fontSize: 14, marginBottom: 16 }}>Ya agregaste todos los ejercicios disponibles.</div>
         )}
+        {sections.map((s) => (
+          <div key={s.key} style={{ marginBottom: 18 }}>
+            <div style={{ fontSize: 12, color: "#8a8580", fontWeight: 700, letterSpacing: 0.4, marginBottom: 8 }}>{s.label.toUpperCase()}</div>
+            {s.items.map((it) => (
+              <PillButton key={it.id} compact onClick={() => openExerciseForm(it.name, it.id)}>
+                {it.name}
+              </PillButton>
+            ))}
+          </div>
+        ))}
 
-        {customReusable.length > 0 && (
-          <>
-            <div style={{ fontSize: 12, color: "#8a8580", fontWeight: 600, letterSpacing: 0.3, margin: "16px 0 8px" }}>TUS EJERCICIOS PERSONALIZADOS</div>
-            {customReusable.map(([id, ex]) => (
+        {orphanCustoms.length > 0 && (
+          <div style={{ marginBottom: 18 }}>
+            <div style={{ fontSize: 12, color: "#8a8580", fontWeight: 700, letterSpacing: 0.4, marginBottom: 8 }}>OTROS PERSONALIZADOS</div>
+            {orphanCustoms.map(([id, ex]) => (
               <PillButton key={id} compact onClick={() => openExerciseForm(ex.name, id)}>
                 {ex.name}
               </PillButton>
             ))}
-          </>
+          </div>
         )}
 
-        <div style={{ marginTop: 6 }}>
-          <DashedButton onClick={openCustomExerciseForm}>
-            <Plus size={17} /> Ejercicio personalizado nuevo
-          </DashedButton>
-        </div>
+        <DashedButton onClick={openCustomExerciseForm}>
+          <Plus size={17} /> Ejercicio personalizado nuevo
+        </DashedButton>
       </div>
     );
   }
@@ -759,7 +801,15 @@ export default function App() {
         {success && <SuccessOverlay message={success} />}
         <TopBar title={customExerciseMode ? "Ejercicio personalizado" : pendingExerciseName} onBack={() => setScreen(editExercise ? "exerciseDetail" : "addExercise")} />
         {customExerciseMode && (
-          <Field label="Nombre del ejercicio" value={exerciseForm.nombre} onChange={(e) => setExerciseForm({ ...exerciseForm, nombre: e.target.value })} placeholder="Ej. Pecho barra amarilla" />
+          <>
+            <Field label="Nombre del ejercicio" value={exerciseForm.nombre} onChange={(e) => setExerciseForm({ ...exerciseForm, nombre: e.target.value })} placeholder="Ej. Pecho barra amarilla" />
+            <SelectField
+              label="Categoría"
+              value={exerciseForm.categoria}
+              onChange={(e) => setExerciseForm({ ...exerciseForm, categoria: e.target.value })}
+              options={CATEGORIES.map((c) => ({ value: c.key, label: c.label }))}
+            />
+          </>
         )}
         <Field label="Orden en el día" type="number" min="1" value={exerciseForm.orden} onChange={(e) => setExerciseForm({ ...exerciseForm, orden: e.target.value })} placeholder="Ej. 1" />
         <Field label="Series" type="number" min="1" value={exerciseForm.series} onChange={(e) => setExerciseForm({ ...exerciseForm, series: e.target.value })} placeholder="Ej. 3" />
