@@ -414,14 +414,23 @@ export default function App() {
   }
 
   async function chooseCategory(catKey) {
-    const day = getDay(currentDayKey);
-    const updated = { ...day, category: catKey, customRoutineId: undefined };
-    await saveDay(currentDayKey, updated);
-    if (changingCategory) {
-      setChangingCategory(false);
-      setScreen("dayDetail");
-    } else {
-      setScreen("addExercise");
+    setError("");
+    try {
+      const day = getDay(currentDayKey);
+      const updated = { ...day, category: catKey };
+      delete updated.customRoutineId;
+
+      await saveDay(currentDayKey, updated);
+
+      if (changingCategory) {
+        setChangingCategory(false);
+        setScreen("dayDetail");
+      } else {
+        setScreen("addExercise");
+      }
+    } catch (e) {
+      console.error("Error al cambiar de rutina:", e);
+      setError(`No se pudo cambiar la rutina: ${e?.message || "error desconocido"}`);
     }
   }
 
@@ -520,7 +529,13 @@ export default function App() {
     } else if (pendingExerciseId) {
       exerciseId = pendingExerciseId;
       if (!exercisesMap[exerciseId]) {
-        await saveExercise(exerciseId, { name, custom: customExerciseMode, category: customExerciseMode ? categoria : undefined, records: [] });
+        const exerciseData = {
+          name,
+          custom: customExerciseMode,
+          records: []
+        };
+        if (customExerciseMode) exerciseData.category = categoria;
+        await saveExercise(exerciseId, exerciseData);
       }
     } else {
       exerciseId = "cx-" + uid();
@@ -582,22 +597,64 @@ export default function App() {
   async function handleSaveRecord() {
     setError("");
     const { fecha, peso, series, repeticiones } = recordForm;
+
     if (!fecha || !peso) return setError("Ingresa la fecha y el peso.");
-    const exerciseId = currentExercise.exerciseId;
-    const exData = exercisesMap[exerciseId] || { name: currentExercise.name, custom: currentExercise.custom, records: [] };
-    const currentRecords = exData.records || [];
-    let updatedRecords;
-    if (editRecordId) {
-      updatedRecords = currentRecords.map((r) => (r.id === editRecordId ? { ...r, fecha, peso: Number(peso), series: Number(series) || 0, repeticiones: Number(repeticiones) || 0 } : r));
-    } else {
-      updatedRecords = [{ id: uid(), fecha, peso: Number(peso), series: Number(series) || 0, repeticiones: Number(repeticiones) || 0 }, ...currentRecords];
+    if (!series || !repeticiones) return setError("Completa series y repeticiones.");
+
+    try {
+      const exerciseId = currentExercise.exerciseId;
+      const exData = exercisesMap[exerciseId] || {
+        name: currentExercise.name,
+        custom: !!currentExercise.custom,
+        records: []
+      };
+
+      const currentRecords = exData.records || [];
+      let updatedRecords;
+
+      if (editRecordId) {
+        updatedRecords = currentRecords.map((r) =>
+          r.id === editRecordId
+            ? {
+                ...r,
+                fecha,
+                peso: Number(peso),
+                series: Number(series),
+                repeticiones: Number(repeticiones)
+              }
+            : r
+        );
+      } else {
+        updatedRecords = [
+          {
+            id: uid(),
+            fecha,
+            peso: Number(peso),
+            series: Number(series),
+            repeticiones: Number(repeticiones)
+          },
+          ...currentRecords
+        ];
+      }
+
+      await saveExercise(exerciseId, {
+        ...exData,
+        records: updatedRecords
+      });
+
+      setCurrentExercise({
+        ...currentExercise,
+        records: updatedRecords
+      });
+
+      flashSuccess("Registro guardado", () => {
+        setEditRecordId(null);
+        setScreen("exerciseDetail");
+      });
+    } catch (e) {
+      console.error("Error al guardar registro:", e);
+      setError(`No se pudo guardar el registro: ${e?.message || "error desconocido"}`);
     }
-    await saveExercise(exerciseId, { ...exData, records: updatedRecords });
-    setCurrentExercise({ ...currentExercise, records: updatedRecords });
-    flashSuccess("Registro guardado", () => {
-      setEditRecordId(null);
-      setScreen("exerciseDetail");
-    });
   }
 
   async function handleDeleteRecord() {
