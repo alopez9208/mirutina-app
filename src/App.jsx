@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { Dumbbell, Plus, ChevronRight, ArrowLeft, Check, Eye, EyeOff, Trophy, Trash2 } from "lucide-react";
+import { Dumbbell, Plus, ChevronRight, ArrowLeft, Check, Eye, EyeOff, Trophy, Trash2, Star, Pencil } from "lucide-react";
 import { auth, db } from "./firebase";
 import {
   createUserWithEmailAndPassword,
@@ -8,7 +8,7 @@ import {
   onAuthStateChanged,
   signOut,
 } from "firebase/auth";
-import { doc, getDoc, setDoc, collection, getDocs } from "firebase/firestore";
+import { doc, getDoc, setDoc, deleteDoc, collection, getDocs } from "firebase/firestore";
 
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
 const todayISO = () => new Date().toISOString().slice(0, 10);
@@ -60,7 +60,7 @@ function sortByFecha(arr) {
 }
 
 // ---------- small UI atoms ----------
-function PillButton({ children, onClick, subtitle, compact, muted, onDelete }) {
+function PillButton({ children, onClick, subtitle, compact, muted, starred, onEdit, onDelete }) {
   const btn = (
     <button
       onClick={onClick}
@@ -81,7 +81,10 @@ function PillButton({ children, onClick, subtitle, compact, muted, onDelete }) {
       }}
     >
       <span style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{children}</div>
+        <div style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", display: "flex", alignItems: "center", gap: 6 }}>
+          {starred && <Star size={13} color="#d97757" fill="#d97757" style={{ flexShrink: 0 }} />}
+          <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{children}</span>
+        </div>
         {subtitle && (
           <div style={{ fontSize: 12.5, color: muted ? "#6e6a65" : "#a39d95", marginTop: 3 }}>{subtitle}</div>
         )}
@@ -89,16 +92,26 @@ function PillButton({ children, onClick, subtitle, compact, muted, onDelete }) {
       <ChevronRight size={18} color="#6e6a65" style={{ flexShrink: 0 }} />
     </button>
   );
-  if (!onDelete) return <div style={{ marginBottom: compact ? 8 : 10 }}>{btn}</div>;
+  if (!onEdit && !onDelete) return <div style={{ marginBottom: compact ? 8 : 10 }}>{btn}</div>;
   return (
     <div style={{ display: "flex", alignItems: "center", gap: 2, marginBottom: compact ? 8 : 10 }}>
       <div style={{ flex: 1, minWidth: 0 }}>{btn}</div>
-      <button
-        onClick={onDelete}
-        style={{ width: 32, flexShrink: 0, border: "none", background: "transparent", color: "#5c5851", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}
-      >
-        <Trash2 size={15} />
-      </button>
+      {onEdit && (
+        <button
+          onClick={onEdit}
+          style={{ width: 32, flexShrink: 0, border: "none", background: "transparent", color: "#5c5851", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}
+        >
+          <Pencil size={14} />
+        </button>
+      )}
+      {onDelete && (
+        <button
+          onClick={onDelete}
+          style={{ width: 32, flexShrink: 0, border: "none", background: "transparent", color: "#5c5851", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}
+        >
+          <Trash2 size={15} />
+        </button>
+      )}
     </div>
   );
 }
@@ -245,6 +258,7 @@ export default function App() {
   const [currentDayKey, setCurrentDayKey] = useState(null);
   const [changingCategory, setChangingCategory] = useState(false);
   const [customLabelInput, setCustomLabelInput] = useState("");
+  const [renamingRoutineId, setRenamingRoutineId] = useState(null);
   const [currentExercise, setCurrentExercise] = useState(null);
   const [pendingExerciseName, setPendingExerciseName] = useState(null);
   const [pendingExerciseId, setPendingExerciseId] = useState(null);
@@ -447,13 +461,29 @@ export default function App() {
   }
 
   function openPersonalizadaName() {
+    setRenamingRoutineId(null);
     setCustomLabelInput("");
+    setError("");
+    setScreen("personalizadaName");
+  }
+
+  function openRenameRoutine(id, currentName) {
+    setRenamingRoutineId(id);
+    setCustomLabelInput(currentName);
     setError("");
     setScreen("personalizadaName");
   }
 
   async function confirmPersonalizada() {
     if (!customLabelInput.trim()) return setError("Ponle un nombre a tu rutina.");
+    if (renamingRoutineId) {
+      const existing = customRoutinesMap[renamingRoutineId] || { name: customLabelInput.trim(), hidden: false };
+      await saveCustomRoutine(renamingRoutineId, { ...existing, name: customLabelInput.trim() });
+      setRenamingRoutineId(null);
+      setError("");
+      setScreen("chooseCategory");
+      return;
+    }
     const routineId = "cr-" + uid();
     await saveCustomRoutine(routineId, { name: customLabelInput.trim(), hidden: false });
     setError("");
@@ -573,6 +603,16 @@ export default function App() {
     const day = getDay(currentDayKey);
     const updatedPlan = (day.plan || []).filter((p) => p.exerciseId !== ex.exerciseId);
     await saveDay(currentDayKey, { ...day, plan: updatedPlan });
+  }
+
+  async function deleteCustomExercise(exerciseId, name) {
+    if (!window.confirm(`¿Eliminar "${name}" de tus ejercicios personalizados? Se borrará su historial de PR. Si está en algún día, aparecerá como "(eliminado)".`)) return;
+    await deleteDoc(doc(db, "users", currentUser.uid, "exercises", exerciseId));
+    setExercisesMap((prev) => {
+      const next = { ...prev };
+      delete next[exerciseId];
+      return next;
+    });
   }
 
   function openExercise(ex) {
@@ -805,7 +845,13 @@ export default function App() {
 
         <div style={{ fontSize: 12, color: "#8a8580", fontWeight: 700, letterSpacing: 0.4, marginBottom: 8 }}>PERSONALIZADA</div>
         {visibleRoutines.map(([id, r]) => (
-          <PillButton key={id} compact onClick={() => selectCustomRoutine(id)} onDelete={() => hideCustomRoutine(id, r.name)}>
+          <PillButton
+            key={id}
+            compact
+            onClick={() => selectCustomRoutine(id)}
+            onEdit={() => openRenameRoutine(id, r.name)}
+            onDelete={() => hideCustomRoutine(id, r.name)}
+          >
             {r.name}
           </PillButton>
         ))}
@@ -822,10 +868,10 @@ export default function App() {
     return (
       <div style={shell}>
         <TopBar title={dayLabel} onBack={() => setScreen("chooseCategory")} />
-        <div style={{ fontSize: 20, fontWeight: 700, marginBottom: 16 }}>Nombra tu rutina</div>
+        <div style={{ fontSize: 20, fontWeight: 700, marginBottom: 16 }}>{renamingRoutineId ? "Renombra tu rutina" : "Nombra tu rutina"}</div>
         <Field label="Nombre de la rutina" value={customLabelInput} onChange={(e) => setCustomLabelInput(e.target.value)} placeholder="Ej. Superior" />
         {error && <div style={{ color: "#e0725e", fontSize: 13.5, marginBottom: 12 }}>{error}</div>}
-        <PrimaryButton onClick={confirmPersonalizada}>Continuar</PrimaryButton>
+        <PrimaryButton onClick={confirmPersonalizada}>{renamingRoutineId ? "Guardar" : "Continuar"}</PrimaryButton>
       </div>
     );
   }
@@ -858,6 +904,7 @@ export default function App() {
                 return (
                   <PillButton
                     key={ex.exerciseId}
+                    starred={ex.custom}
                     onClick={() => openExercise(ex)}
                     onDelete={() => quickDeleteExercise(ex)}
                     subtitle={`${pr !== null ? `PR: ${pr} kg` : "Sin PR"} · ${ex.sets}x${ex.reps} reps`}
@@ -884,10 +931,10 @@ export default function App() {
     const day = getDay(currentDayKey);
     const alreadyIds = new Set((day.plan || []).map((p) => p.exerciseId));
     const sections = CATEGORIES.map((cat) => {
-      const fixed = cat.exercises.filter((name) => !alreadyIds.has("fx-" + slugify(name))).map((name) => ({ id: "fx-" + slugify(name), name }));
+      const fixed = cat.exercises.filter((name) => !alreadyIds.has("fx-" + slugify(name))).map((name) => ({ id: "fx-" + slugify(name), name, custom: false }));
       const customs = Object.entries(exercisesMap)
         .filter(([id, ex]) => ex.custom && ex.category === cat.key && !alreadyIds.has(id))
-        .map(([id, ex]) => ({ id, name: ex.name }));
+        .map(([id, ex]) => ({ id, name: ex.name, custom: true }));
       return { key: cat.key, label: cat.label, items: [...fixed, ...customs] };
     }).filter((s) => s.items.length > 0);
     const orphanCustoms = Object.entries(exercisesMap).filter(([id, ex]) => ex.custom && !ex.category && !alreadyIds.has(id));
@@ -902,7 +949,13 @@ export default function App() {
           <div key={s.key} style={{ marginBottom: 18 }}>
             <div style={{ fontSize: 12, color: "#8a8580", fontWeight: 700, letterSpacing: 0.4, marginBottom: 8 }}>{s.label.toUpperCase()}</div>
             {s.items.map((it) => (
-              <PillButton key={it.id} compact onClick={() => openExerciseForm(it.name, it.id)}>
+              <PillButton
+                key={it.id}
+                compact
+                starred={it.custom}
+                onClick={() => openExerciseForm(it.name, it.id)}
+                onDelete={it.custom ? () => deleteCustomExercise(it.id, it.name) : undefined}
+              >
                 {it.name}
               </PillButton>
             ))}
@@ -913,7 +966,13 @@ export default function App() {
           <div style={{ marginBottom: 18 }}>
             <div style={{ fontSize: 12, color: "#8a8580", fontWeight: 700, letterSpacing: 0.4, marginBottom: 8 }}>OTROS PERSONALIZADOS</div>
             {orphanCustoms.map(([id, ex]) => (
-              <PillButton key={id} compact onClick={() => openExerciseForm(ex.name, id)}>
+              <PillButton
+                key={id}
+                compact
+                starred
+                onClick={() => openExerciseForm(ex.name, id)}
+                onDelete={() => deleteCustomExercise(id, ex.name)}
+              >
                 {ex.name}
               </PillButton>
             ))}
