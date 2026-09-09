@@ -840,16 +840,97 @@ export default function App() {
     return (
       <div style={shell}>
         {success && <SuccessOverlay message={success} />}
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 40 }}>
-          <div>
-            {currentUser?.username && <div style={{ fontSize: 16, fontWeight: 600, color: "#d97757", marginBottom: 4 }}>{currentUser.username}</div>}
-            <div style={{ fontSize: 22, fontWeight: 700 }}>MiRutina</div>
-          </div>
-          <button onClick={logout} style={{ background: "none", border: "none", color: "#8a8580", fontSize: 13, cursor: "pointer", marginTop: 4 }}>
+        <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 8 }}>
+          <button onClick={logout} style={{ background: "none", border: "none", color: "#6e6a65", fontSize: 13, cursor: "pointer" }}>
             Salir
           </button>
         </div>
-        <PillButton onClick={() => setScreen("days")}>Mi rutina</PillButton>
+
+        <div
+          style={{
+            position: "relative",
+            borderRadius: 28,
+            padding: "30px 26px",
+            marginBottom: 22,
+            background: "linear-gradient(145deg, #ff7a54 0%, #e0562f 100%)",
+            overflow: "hidden",
+          }}
+        >
+          <div
+            style={{
+              position: "absolute",
+              top: -50,
+              right: -30,
+              width: 160,
+              height: 160,
+              borderRadius: "50%",
+              background: "rgba(255,255,255,0.10)",
+            }}
+          />
+          <div
+            style={{
+              position: "absolute",
+              bottom: -60,
+              left: -30,
+              width: 130,
+              height: 130,
+              borderRadius: "50%",
+              background: "rgba(255,255,255,0.07)",
+            }}
+          />
+          <div style={{ position: "relative" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
+              <div
+                style={{
+                  width: 34,
+                  height: 34,
+                  borderRadius: 12,
+                  background: "rgba(255,255,255,0.18)",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                }}
+              >
+                <Dumbbell size={18} color="#1a1512" />
+              </div>
+              <div style={{ fontSize: 13.5, color: "rgba(26,21,18,0.75)", fontWeight: 600 }}>Hola</div>
+            </div>
+            <div style={{ fontSize: 26, fontWeight: 800, color: "#1a1512", lineHeight: 1.1 }}>{currentUser?.username || ""}</div>
+            <div style={{ fontSize: 13.5, color: "rgba(26,21,18,0.65)", marginTop: 4 }}>MiRutina App</div>
+          </div>
+        </div>
+
+        <button
+          onClick={() => setScreen("days")}
+          style={{
+            width: "100%",
+            display: "flex",
+            alignItems: "center",
+            gap: 14,
+            padding: "18px 20px",
+            borderRadius: 20,
+            border: "1px solid #2c2924",
+            background: "#1f1e1c",
+            color: "#f2ede6",
+            cursor: "pointer",
+          }}
+        >
+          <span style={{ flex: 1, textAlign: "left", fontSize: 16.5, fontWeight: 600 }}>Mi rutina</span>
+          <div
+            style={{
+              width: 34,
+              height: 34,
+              borderRadius: "50%",
+              background: "#ff7a54",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              flexShrink: 0,
+            }}
+          >
+            <ChevronRight size={17} color="#1a1512" strokeWidth={2.5} />
+          </div>
+        </button>
       </div>
     );
   }
