@@ -60,7 +60,7 @@ function sortByFecha(arr) {
 }
 
 // ---------- small UI atoms ----------
-function PillButton({ children, onClick, subtitle, compact, muted, starred, onEdit, onDelete }) {
+function PillButton({ children, onClick, subtitle, compact, muted, starred, onEdit, onDelete, onCheck, checked }) {
   const btn = (
     <button
       onClick={onClick}
@@ -71,8 +71,8 @@ function PillButton({ children, onClick, subtitle, compact, muted, starred, onEd
         gap: 12,
         padding: compact ? "11px 16px" : "16px 18px",
         borderRadius: compact ? 16 : 999,
-        border: "1px solid #33312e",
-        background: "#1f1e1c",
+        border: checked ? "1px solid #3fa863" : "1px solid #33312e",
+        background: checked ? "#15271c" : "#1f1e1c",
         color: "#f2ede6",
         fontSize: 16,
         fontWeight: 500,
@@ -92,9 +92,29 @@ function PillButton({ children, onClick, subtitle, compact, muted, starred, onEd
       <ChevronRight size={18} color="#6e6a65" style={{ flexShrink: 0 }} />
     </button>
   );
-  if (!onEdit && !onDelete) return <div style={{ marginBottom: compact ? 8 : 10 }}>{btn}</div>;
+  if (!onEdit && !onDelete && !onCheck) return <div style={{ marginBottom: compact ? 8 : 10 }}>{btn}</div>;
   return (
     <div style={{ display: "flex", alignItems: "center", gap: 2, marginBottom: compact ? 8 : 10 }}>
+      {onCheck && (
+        <button
+          onClick={onCheck}
+          style={{
+            width: 38,
+            height: 38,
+            flexShrink: 0,
+            borderRadius: "50%",
+            border: checked ? "none" : "1.5px solid #4a4640",
+            background: checked ? "#22c55e" : "transparent",
+            color: checked ? "#0f1a12" : "#5c5851",
+            cursor: "pointer",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+          }}
+        >
+          <Check size={16} strokeWidth={3} />
+        </button>
+      )}
       <div style={{ flex: 1, minWidth: 0 }}>{btn}</div>
       {onEdit && (
         <button
@@ -264,6 +284,8 @@ export default function App() {
   const [pendingExerciseId, setPendingExerciseId] = useState(null);
   const [editExercise, setEditExercise] = useState(false);
   const [editRecordId, setEditRecordId] = useState(null);
+  const [trainingDayKey, setTrainingDayKey] = useState(null);
+  const [trainingCompleted, setTrainingCompleted] = useState(new Set());
 
   const [loginForm, setLoginForm] = useState({ username: "", password: "" });
   const [registerForm, setRegisterForm] = useState({ email: "", username: "", password: "", confirm: "" });
@@ -615,6 +637,24 @@ export default function App() {
     });
   }
 
+  function toggleTraining() {
+    if (trainingDayKey === currentDayKey) {
+      setTrainingDayKey(null);
+    } else {
+      setTrainingDayKey(currentDayKey);
+    }
+    setTrainingCompleted(new Set());
+  }
+
+  function toggleExerciseDone(exerciseId) {
+    setTrainingCompleted((prev) => {
+      const next = new Set(prev);
+      if (next.has(exerciseId)) next.delete(exerciseId);
+      else next.add(exerciseId);
+      return next;
+    });
+  }
+
   function openExercise(ex) {
     setCurrentExercise(ex);
     setScreen("exerciseDetail");
@@ -882,6 +922,7 @@ export default function App() {
     const day = getDay(currentDayKey);
     const exercises = combinedDayExercises(currentDayKey);
     const isRestDay = day.category === "descanso";
+    const isTraining = trainingDayKey === currentDayKey;
     return (
       <div style={shell}>
         <TopBar title={dayLabel} onBack={() => setScreen("days")} />
@@ -899,20 +940,42 @@ export default function App() {
             {exercises.length === 0 ? (
               <div style={{ color: "#8a8580", fontSize: 14, marginBottom: 16 }}>Aún no has agregado ejercicios.</div>
             ) : (
-              exercises.map((ex) => {
-                const pr = prOf(ex);
-                return (
-                  <PillButton
-                    key={ex.exerciseId}
-                    starred={ex.custom}
-                    onClick={() => openExercise(ex)}
-                    onDelete={() => quickDeleteExercise(ex)}
-                    subtitle={`${pr !== null ? `PR: ${pr} kg` : "Sin PR"} · ${ex.sets}x${ex.reps} reps`}
-                  >
-                    {ex.name}
-                  </PillButton>
-                );
-              })
+              <>
+                <button
+                  onClick={toggleTraining}
+                  style={{
+                    display: "block",
+                    padding: "7px 18px",
+                    borderRadius: 999,
+                    border: "none",
+                    background: isTraining ? "#e0725e" : "#d97757",
+                    color: "#1a1512",
+                    fontSize: 14,
+                    fontWeight: 600,
+                    cursor: "pointer",
+                    marginBottom: 16,
+                  }}
+                >
+                  {isTraining ? "Terminar" : "Empezar"}
+                </button>
+
+                {exercises.map((ex) => {
+                  const pr = prOf(ex);
+                  return (
+                    <PillButton
+                      key={ex.exerciseId}
+                      starred={ex.custom}
+                      onClick={() => openExercise(ex)}
+                      onDelete={() => quickDeleteExercise(ex)}
+                      onCheck={isTraining ? () => toggleExerciseDone(ex.exerciseId) : undefined}
+                      checked={trainingCompleted.has(ex.exerciseId)}
+                      subtitle={`${pr !== null ? `PR: ${pr} kg` : "Sin PR"} · ${ex.sets}x${ex.reps} reps`}
+                    >
+                      {ex.name}
+                    </PillButton>
+                  );
+                })}
+              </>
             )}
 
             <div style={{ marginTop: 6 }}>
