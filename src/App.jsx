@@ -11,7 +11,14 @@ import {
 import { doc, getDoc, setDoc, deleteDoc, collection, getDocs } from "firebase/firestore";
 
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
-const todayISO = () => new Date().toISOString().slice(0, 10);
+function todayISO() {
+  return new Date().toISOString().slice(0, 10);
+}
+
+function todayDayKey() {
+  const map = ["domingo", "lunes", "martes", "miercoles", "jueves", "viernes", "sabado"];
+  return map[new Date().getDay()];
+}
 
 const DAYS = [
   { key: "lunes", label: "Lunes" },
@@ -60,7 +67,7 @@ function sortByFecha(arr) {
 }
 
 // ---------- small UI atoms ----------
-function PillButton({ children, onClick, subtitle, compact, muted, starred, onEdit, onDelete, onCheck, checked }) {
+function PillButton({ children, onClick, subtitle, compact, muted, starred, onEdit, onDelete, onCheck, checked, highlighted }) {
   const btn = (
     <button
       onClick={onClick}
@@ -71,8 +78,8 @@ function PillButton({ children, onClick, subtitle, compact, muted, starred, onEd
         gap: 12,
         padding: compact ? "11px 16px" : "16px 18px",
         borderRadius: compact ? 16 : 999,
-        border: checked ? "1px solid #3fa863" : "1px solid #33312e",
-        background: checked ? "#15271c" : "#1f1e1c",
+        border: checked ? "1px solid #3fa863" : highlighted ? "1.5px solid #d97757" : "1px solid #33312e",
+        background: checked ? "#15271c" : highlighted ? "#2a1d15" : "#1f1e1c",
         color: "#f2ede6",
         fontSize: 16,
         fontWeight: 500,
@@ -849,13 +856,21 @@ export default function App() {
 
   // ---------- DAYS LIST ----------
   if (screen === "days") {
+    const today = todayDayKey();
     return (
       <div style={shell}>
         <TopBar title="Mi rutina" onBack={() => setScreen("home")} />
         {DAYS.map((d) => {
           const day = getDay(d.key);
           return (
-            <PillButton key={d.key} compact onClick={() => openDay(d.key)} subtitle={day.category ? dayRoutineLabel(day) : "Sin rutina asignada"} muted={!day.category}>
+            <PillButton
+              key={d.key}
+              compact
+              onClick={() => openDay(d.key)}
+              subtitle={day.category ? dayRoutineLabel(day) : "Sin rutina asignada"}
+              muted={!day.category}
+              highlighted={d.key === today}
+            >
               {d.label}
             </PillButton>
           );
