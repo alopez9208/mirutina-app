@@ -17,6 +17,14 @@ function generateShareCode() {
   return code;
 }
 
+const ACCENTS = {
+  coral: { name: "Coral", from: "#ff7a54", to: "#e0562f", solid: "#ff7a54", text: "#1a1512" },
+  azul: { name: "Azul", from: "#5b8dff", to: "#3457d6", solid: "#5b8dff", text: "#0d1730" },
+  verde: { name: "Verde", from: "#3ecf8e", to: "#1f9d68", solid: "#3ecf8e", text: "#07241a" },
+  rosa: { name: "Rosa", from: "#ff6fa5", to: "#d93d74", solid: "#ff6fa5", text: "#2a0916" },
+  purpura: { name: "Púrpura", from: "#a480ff", to: "#7248d6", solid: "#a480ff", text: "#160b2e" },
+};
+
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
 function todayISO() {
   return new Date().toISOString().slice(0, 10);
@@ -324,7 +332,7 @@ export default function App() {
       if (fbUser) {
         const profileSnap = await getDoc(doc(db, "users", fbUser.uid));
         const profile = profileSnap.exists() ? profileSnap.data() : { username: fbUser.email };
-        const user = { uid: fbUser.uid, email: fbUser.email, username: profile.username };
+        const user = { uid: fbUser.uid, email: fbUser.email, username: profile.username, accentColor: profile.accentColor || "coral" };
         setCurrentUser(user);
         await loadRutina(user);
         setScreen((s) => (s === "login" || s === "register" ? "home" : s));
@@ -457,6 +465,11 @@ export default function App() {
     await setDoc(doc(db, "users", currentUser.uid, "exercises", exerciseId), exData);
     setExercisesMap((prev) => ({ ...prev, [exerciseId]: exData }));
     return exData;
+  }
+
+  async function updateAccentColor(key) {
+    setCurrentUser((prev) => ({ ...prev, accentColor: key }));
+    await setDoc(doc(db, "users", currentUser.uid), { accentColor: key }, { merge: true });
   }
 
   async function saveCustomRoutine(id, data) {
@@ -1008,6 +1021,7 @@ export default function App() {
 
   // ---------- HOME ----------
   if (screen === "home") {
+    const accent = ACCENTS[currentUser?.accentColor || "coral"];
     return (
       <div style={shell}>
         {success && <SuccessOverlay message={success} />}
@@ -1023,7 +1037,7 @@ export default function App() {
             borderRadius: 28,
             padding: "30px 26px",
             marginBottom: 22,
-            background: "linear-gradient(145deg, #ff7a54 0%, #e0562f 100%)",
+            background: `linear-gradient(145deg, ${accent.from} 0%, ${accent.to} 100%)`,
             overflow: "hidden",
           }}
         >
@@ -1062,12 +1076,12 @@ export default function App() {
                   justifyContent: "center",
                 }}
               >
-                <Dumbbell size={18} color="#1a1512" />
+                <Dumbbell size={18} color={accent.text} />
               </div>
-              <div style={{ fontSize: 13.5, color: "rgba(26,21,18,0.75)", fontWeight: 600 }}>Hola</div>
+              <div style={{ fontSize: 13.5, color: accent.text, opacity: 0.75, fontWeight: 600 }}>Hola</div>
             </div>
-            <div style={{ fontSize: 26, fontWeight: 800, color: "#1a1512", lineHeight: 1.1 }}>{currentUser?.username || ""}</div>
-            <div style={{ fontSize: 13.5, color: "rgba(26,21,18,0.65)", marginTop: 4 }}>MiRutina App</div>
+            <div style={{ fontSize: 26, fontWeight: 800, color: accent.text, lineHeight: 1.1 }}>{currentUser?.username || ""}</div>
+            <div style={{ fontSize: 13.5, color: accent.text, opacity: 0.65, marginTop: 4 }}>MiRutina App</div>
           </div>
         </div>
 
@@ -1092,16 +1106,48 @@ export default function App() {
               width: 34,
               height: 34,
               borderRadius: "50%",
-              background: "#ff7a54",
+              background: accent.solid,
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
               flexShrink: 0,
             }}
           >
-            <ChevronRight size={17} color="#1a1512" strokeWidth={2.5} />
+            <ChevronRight size={17} color={accent.text} strokeWidth={2.5} />
           </div>
         </button>
+
+        <div style={{ marginTop: 22 }}>
+          <div style={{ fontSize: 12, color: "#6e6a65", marginBottom: 10 }}>Color de la app</div>
+          <div style={{ display: "flex", gap: 12 }}>
+            {Object.entries(ACCENTS).map(([key, opt]) => (
+              <button
+                key={key}
+                onClick={() => updateAccentColor(key)}
+                aria-label={opt.name}
+                style={{
+                  width: 34,
+                  height: 34,
+                  borderRadius: "50%",
+                  border: (currentUser?.accentColor || "coral") === key ? "2px solid #f2ede6" : "2px solid transparent",
+                  padding: 2,
+                  background: "transparent",
+                  cursor: "pointer",
+                }}
+              >
+                <span
+                  style={{
+                    display: "block",
+                    width: "100%",
+                    height: "100%",
+                    borderRadius: "50%",
+                    background: `linear-gradient(145deg, ${opt.from} 0%, ${opt.to} 100%)`,
+                  }}
+                />
+              </button>
+            ))}
+          </div>
+        </div>
       </div>
     );
   }
