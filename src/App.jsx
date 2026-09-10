@@ -2105,26 +2105,6 @@ export default function App() {
 
         <div style={{ display: "flex", gap: 8, marginBottom: 20 }}>
           <button
-            onClick={openRestTimer}
-            style={{
-              flex: 1,
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              gap: 6,
-              padding: "11px 10px",
-              borderRadius: 14,
-              border: "1px solid #33312e",
-              background: "#1f1e1c",
-              color: "#f2ede6",
-              fontSize: 13.5,
-              fontWeight: 500,
-              cursor: "pointer",
-            }}
-          >
-            <Timer size={15} color={accent.solid} /> Descansar
-          </button>
-          <button
             onClick={openCalc1RM}
             style={{
               flex: 1,
