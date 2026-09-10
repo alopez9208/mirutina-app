@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from "react";
-import { Dumbbell, Plus, ChevronRight, ArrowLeft, Check, X, Eye, EyeOff, Trophy, Trash2, Star, Pencil, Share2, FolderClock, Download, Save, Copy, Sparkles, ChevronDown, ChevronUp } from "lucide-react";
+import React, { useState, useEffect, useRef } from "react";
+import { Dumbbell, Plus, ChevronRight, ArrowLeft, Check, X, Eye, EyeOff, Trophy, Trash2, Star, Pencil, Share2, FolderClock, Download, Save, Copy, Sparkles, ChevronDown, ChevronUp, Timer, Play, Pause, RotateCcw, Calculator } from "lucide-react";
 import { auth, db } from "./firebase";
 import {
   createUserWithEmailAndPassword,
@@ -30,6 +30,7 @@ const ACCENT_STORAGE_KEY = "mirutina_accent";
 // Historial de cambios que se muestra en "Ver últimas actualizaciones".
 // Para agregar uno nuevo, súmalo arriba de la lista (el más reciente primero).
 const UPDATES = [
+  { date: "10 sept 2026", text: "Nuevo temporizador de descanso y calculadora de 1RM dentro de cada ejercicio." },
   { date: "10 sept 2026", text: "Ahora puedes cambiar el color de toda la app desde el lápiz de arriba." },
   { date: "3 sept 2026", text: "Se puede compartir tu rutina con un código para que un amigo la importe." },
   { date: "28 ago 2026", text: "Los ejercicios personalizados ahora se marcan con una estrella." },
@@ -94,6 +95,22 @@ function prOf(ex) {
 
 function sortByFecha(arr) {
   return [...arr].sort((a, b) => (a.fecha < b.fecha ? 1 : -1));
+}
+
+const REST_PRESETS = [60, 90, 120];
+
+function epley1RM(weight, reps) {
+  const w = Number(weight) || 0;
+  const r = Number(reps) || 0;
+  if (w <= 0 || r <= 0) return null;
+  if (r === 1) return w;
+  return w * (1 + r / 30);
+}
+
+function fmtSeconds(s) {
+  const m = Math.floor(s / 60);
+  const r = s % 60;
+  return `${m}:${r.toString().padStart(2, "0")}`;
 }
 
 // ---------- small UI atoms ----------
@@ -286,6 +303,138 @@ function TopBar({ title, onBack }) {
   );
 }
 
+function RestTimerOverlay({ accent, presetIndex, onPickPreset, secondsLeft, running, onToggleRunning, onReset, onClose }) {
+  const total = REST_PRESETS[presetIndex];
+  const progress = total > 0 ? (total - secondsLeft) / total : 0;
+  const radius = 42;
+  const circ = 2 * Math.PI * radius;
+  return (
+    <div
+      style={{
+        position: "absolute",
+        inset: 0,
+        background: "rgba(15,14,13,0.92)",
+        display: "flex",
+        flexDirection: "column",
+        alignItems: "center",
+        justifyContent: "center",
+        gap: 18,
+        zIndex: 50,
+      }}
+    >
+      <button onClick={onClose} style={{ position: "absolute", top: 18, right: 18, background: "none", border: "none", color: "#8a8580", cursor: "pointer" }}>
+        <X size={22} />
+      </button>
+
+      <div style={{ display: "flex", gap: 8 }}>
+        {REST_PRESETS.map((p, i) => (
+          <button
+            key={p}
+            onClick={() => onPickPreset(i)}
+            style={{
+              padding: "5px 12px",
+              borderRadius: 999,
+              border: i === presetIndex ? `1px solid ${accent.solid}` : "1px solid #33312e",
+              background: i === presetIndex ? "#2a1d15" : "transparent",
+              color: i === presetIndex ? accent.solid : "#8a8580",
+              fontSize: 12.5,
+              cursor: "pointer",
+            }}
+          >
+            {p}s
+          </button>
+        ))}
+      </div>
+
+      <div style={{ position: "relative", width: 160, height: 160 }}>
+        <svg width="160" height="160" style={{ transform: "rotate(-90deg)" }}>
+          <circle cx="80" cy="80" r={radius} fill="none" stroke="#2a2824" strokeWidth="8" />
+          <circle
+            cx="80"
+            cy="80"
+            r={radius}
+            fill="none"
+            stroke={accent.solid}
+            strokeWidth="8"
+            strokeLinecap="round"
+            strokeDasharray={circ}
+            strokeDashoffset={circ * (1 - progress)}
+            style={{ transition: "stroke-dashoffset 1s linear" }}
+          />
+        </svg>
+        <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 30, fontWeight: 700 }}>
+          {fmtSeconds(secondsLeft)}
+        </div>
+      </div>
+
+      <div style={{ display: "flex", gap: 12 }}>
+        <button
+          onClick={onReset}
+          style={{ width: 46, height: 46, borderRadius: "50%", border: "1px solid #33312e", background: "#1f1e1c", color: "#c9c4bd", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}
+        >
+          <RotateCcw size={18} />
+        </button>
+        <button
+          onClick={onToggleRunning}
+          style={{ width: 62, height: 62, borderRadius: "50%", border: "none", background: accent.solid, color: accent.text, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}
+        >
+          {running ? <Pause size={24} /> : <Play size={24} />}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function Calc1RMOverlay({ accent, weight, reps, onWeightChange, onRepsChange, onClose }) {
+  const est = epley1RM(weight, reps);
+  return (
+    <div
+      style={{
+        position: "absolute",
+        inset: 0,
+        background: "rgba(15,14,13,0.92)",
+        display: "flex",
+        flexDirection: "column",
+        justifyContent: "center",
+        padding: "0 26px",
+        zIndex: 50,
+      }}
+    >
+      <button onClick={onClose} style={{ position: "absolute", top: 18, right: 18, background: "none", border: "none", color: "#8a8580", cursor: "pointer" }}>
+        <X size={22} />
+      </button>
+      <div style={{ fontSize: 15, fontWeight: 600, marginBottom: 18 }}>Calculadora de 1RM</div>
+
+      <label style={{ display: "block", marginBottom: 14 }}>
+        <div style={{ fontSize: 12.5, color: "#a39d95", marginBottom: 6 }}>Peso usado (kg)</div>
+        <input
+          type="number"
+          value={weight}
+          onChange={(e) => onWeightChange(e.target.value)}
+          placeholder="Ej. 70"
+          style={{ width: "100%", boxSizing: "border-box", padding: "12px 14px", borderRadius: 14, border: "1px solid #33312e", background: "#1a1917", color: "#f2ede6", fontSize: 15 }}
+        />
+      </label>
+      <label style={{ display: "block", marginBottom: 18 }}>
+        <div style={{ fontSize: 12.5, color: "#a39d95", marginBottom: 6 }}>Repeticiones hechas</div>
+        <input
+          type="number"
+          value={reps}
+          onChange={(e) => onRepsChange(e.target.value)}
+          placeholder="Ej. 8"
+          style={{ width: "100%", boxSizing: "border-box", padding: "12px 14px", borderRadius: 14, border: "1px solid #33312e", background: "#1a1917", color: "#f2ede6", fontSize: 15 }}
+        />
+      </label>
+
+      <div style={{ borderRadius: 16, background: "#1f1e1c", border: "1px solid #2a2824", padding: "16px 18px", textAlign: "center" }}>
+        <div style={{ fontSize: 11.5, color: "#8a8580", marginBottom: 4 }}>1RM estimado</div>
+        <div style={{ fontSize: 26, fontWeight: 800, color: est ? accent.solid : "#5c5851" }}>{est ? `${est.toFixed(1)} kg` : "—"}</div>
+      </div>
+      <div style={{ fontSize: 11, color: "#6e6a65", marginTop: 10, textAlign: "center" }}>Fórmula de Epley: estimado, no un máximo real.</div>
+    </div>
+  );
+}
+
 function SuccessOverlay({ message }) {
   return (
     <div style={{ position: "absolute", inset: 0, background: "rgba(15,14,13,0.88)", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 14, zIndex: 50, animation: "fadeIn 0.18s ease-out" }}>
@@ -309,6 +458,16 @@ export default function App() {
   const [showPw, setShowPw] = useState(false);
   const [accentPickerOpen, setAccentPickerOpen] = useState(false);
   const [updatesOpen, setUpdatesOpen] = useState(false);
+
+  const [restTimerOpen, setRestTimerOpen] = useState(false);
+  const [restPresetIndex, setRestPresetIndex] = useState(1);
+  const [restSecondsLeft, setRestSecondsLeft] = useState(REST_PRESETS[1]);
+  const [restRunning, setRestRunning] = useState(false);
+  const restIntervalRef = useRef(null);
+
+  const [calc1rmOpen, setCalc1rmOpen] = useState(false);
+  const [calcWeight, setCalcWeight] = useState("");
+  const [calcReps, setCalcReps] = useState("");
 
   const [currentUser, setCurrentUser] = useState(null);
   const [rutina, setRutina] = useState({});
@@ -358,6 +517,43 @@ export default function App() {
     });
     return () => unsub();
   }, []);
+
+  useEffect(() => {
+    if (restRunning) {
+      restIntervalRef.current = setInterval(() => {
+        setRestSecondsLeft((s) => {
+          if (s <= 1) {
+            clearInterval(restIntervalRef.current);
+            setRestRunning(false);
+            if (navigator.vibrate) navigator.vibrate(200);
+            return 0;
+          }
+          return s - 1;
+        });
+      }, 1000);
+    }
+    return () => clearInterval(restIntervalRef.current);
+  }, [restRunning]);
+
+  function openRestTimer() {
+    setRestSecondsLeft(REST_PRESETS[restPresetIndex]);
+    setRestRunning(true);
+    setRestTimerOpen(true);
+  }
+  function pickRestPreset(i) {
+    setRestPresetIndex(i);
+    setRestSecondsLeft(REST_PRESETS[i]);
+    setRestRunning(false);
+  }
+  function resetRestTimer() {
+    setRestSecondsLeft(REST_PRESETS[restPresetIndex]);
+    setRestRunning(false);
+  }
+  function openCalc1RM() {
+    setCalcWeight("");
+    setCalcReps("");
+    setCalc1rmOpen(true);
+  }
 
   function flashSuccess(message, next) {
     setSuccess(message);
@@ -1832,6 +2028,49 @@ export default function App() {
           Plan: {currentExercise.sets}x{currentExercise.reps} reps · editar
         </button>
 
+        <div style={{ display: "flex", gap: 8, marginBottom: 20 }}>
+          <button
+            onClick={openRestTimer}
+            style={{
+              flex: 1,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              gap: 6,
+              padding: "11px 10px",
+              borderRadius: 14,
+              border: "1px solid #33312e",
+              background: "#1f1e1c",
+              color: "#f2ede6",
+              fontSize: 13.5,
+              fontWeight: 500,
+              cursor: "pointer",
+            }}
+          >
+            <Timer size={15} color={accent.solid} /> Descansar
+          </button>
+          <button
+            onClick={openCalc1RM}
+            style={{
+              flex: 1,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              gap: 6,
+              padding: "11px 10px",
+              borderRadius: 14,
+              border: "1px solid #33312e",
+              background: "#1f1e1c",
+              color: "#f2ede6",
+              fontSize: 13.5,
+              fontWeight: 500,
+              cursor: "pointer",
+            }}
+          >
+            <Calculator size={15} color={accent.solid} /> Calcular 1RM
+          </button>
+        </div>
+
         {records.length === 0 ? (
           <div style={{ color: "#8a8580", fontSize: 14, marginBottom: 20 }}>Sin registros aún.</div>
         ) : (
@@ -1854,6 +2093,30 @@ export default function App() {
         <DashedButton onClick={openNewRecord}>
           <Plus size={17} /> Nuevo registro
         </DashedButton>
+
+        {restTimerOpen && (
+          <RestTimerOverlay
+            accent={accent}
+            presetIndex={restPresetIndex}
+            onPickPreset={pickRestPreset}
+            secondsLeft={restSecondsLeft}
+            running={restRunning}
+            onToggleRunning={() => setRestRunning((v) => !v)}
+            onReset={resetRestTimer}
+            onClose={() => setRestTimerOpen(false)}
+          />
+        )}
+
+        {calc1rmOpen && (
+          <Calc1RMOverlay
+            accent={accent}
+            weight={calcWeight}
+            reps={calcReps}
+            onWeightChange={setCalcWeight}
+            onRepsChange={setCalcReps}
+            onClose={() => setCalc1rmOpen(false)}
+          />
+        )}
       </div>
     );
   }
