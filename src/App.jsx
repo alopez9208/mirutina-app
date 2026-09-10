@@ -450,11 +450,37 @@ function SuccessOverlay({ message }) {
   );
 }
 
+function NewRecordOverlay({ exerciseName, before, after }) {
+  const diff = after - before;
+  return (
+    <div style={{ position: "absolute", inset: 0, background: "rgba(15,14,13,0.92)", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 6, zIndex: 50, animation: "fadeIn 0.18s ease-out", textAlign: "center", padding: "0 24px" }}>
+      <div style={{ width: 84, height: 84, borderRadius: "50%", background: `${CURRENT_ACCENT.solid}22`, border: `1.5px solid ${CURRENT_ACCENT.solid}`, display: "flex", alignItems: "center", justifyContent: "center", animation: "popIn 0.4s cubic-bezier(.34,1.56,.64,1)", marginBottom: 8 }}>
+        <Trophy size={38} color={CURRENT_ACCENT.solid} />
+      </div>
+      <div style={{ fontSize: 20, fontWeight: 700, color: CURRENT_ACCENT.solid }}>¡Nuevo récord!</div>
+      <div style={{ fontSize: 14.5, color: "#a39d95", marginBottom: 4 }}>{exerciseName}</div>
+      <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
+        <span style={{ fontSize: 16, color: "#8a8580", textDecoration: "line-through" }}>{before} kg</span>
+        <span style={{ color: "#6e6a65", fontSize: 15 }}>→</span>
+        <span style={{ fontSize: 26, fontWeight: 700, color: "#f2ede6" }}>{after} kg</span>
+      </div>
+      <div style={{ marginTop: 4, padding: "4px 12px", borderRadius: 999, background: `${CURRENT_ACCENT.solid}22`, color: CURRENT_ACCENT.solid, fontSize: 13, fontWeight: 700 }}>
+        +{diff} kg
+      </div>
+      <style>{`
+        @keyframes popIn { 0% { transform: scale(0.4); opacity: 0; } 100% { transform: scale(1); opacity: 1; } }
+        @keyframes fadeIn { 0% { opacity: 0; } 100% { opacity: 1; } }
+      `}</style>
+    </div>
+  );
+}
+
 export default function App() {
   const [screen, setScreen] = useState("login");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState(null);
+  const [recordCelebration, setRecordCelebration] = useState(null); // { exerciseName, before, after }
   const [showPw, setShowPw] = useState(false);
   const [accentPickerOpen, setAccentPickerOpen] = useState(false);
   const [updatesOpen, setUpdatesOpen] = useState(false);
@@ -543,7 +569,7 @@ export default function App() {
   function pickRestPreset(i) {
     setRestPresetIndex(i);
     setRestSecondsLeft(REST_PRESETS[i]);
-    setRestRunning(false);
+    setRestRunning(restTimerOpen); // si ya está abierto, sigue corriendo con el nuevo preset
   }
   function resetRestTimer() {
     setRestSecondsLeft(REST_PRESETS[restPresetIndex]);
@@ -1067,6 +1093,8 @@ export default function App() {
       };
 
       const currentRecords = exData.records || [];
+      const previousPR = currentRecords.length ? Math.max(...currentRecords.map((r) => Number(r.peso) || 0)) : null;
+      const newWeight = Number(peso);
       let updatedRecords;
 
       if (editRecordId) {
@@ -1104,10 +1132,25 @@ export default function App() {
         records: updatedRecords
       });
 
-      flashSuccess("Registro guardado", () => {
-        setEditRecordId(null);
-        setScreen("exerciseDetail");
-      });
+      const isNewPR = !editRecordId && previousPR !== null && newWeight > previousPR;
+
+      if (isNewPR) {
+        setRecordCelebration({
+          exerciseName: currentExercise.name,
+          before: previousPR,
+          after: newWeight
+        });
+        setTimeout(() => {
+          setRecordCelebration(null);
+          setEditRecordId(null);
+          setScreen("exerciseDetail");
+        }, 2200);
+      } else {
+        flashSuccess("Registro guardado", () => {
+          setEditRecordId(null);
+          setScreen("exerciseDetail");
+        });
+      }
     } catch (e) {
       console.error("Error al guardar registro:", e);
       setError(`No se pudo guardar el registro: ${e?.message || "error desconocido"}`);
@@ -1866,23 +1909,41 @@ export default function App() {
               <div style={{ color: "#8a8580", fontSize: 14, marginBottom: 16 }}>Aún no has agregado ejercicios.</div>
             ) : (
               <>
-                <button
-                  onClick={toggleTraining}
-                  style={{
-                    display: "block",
-                    padding: "7px 18px",
-                    borderRadius: 999,
-                    border: "none",
-                    background: isTraining ? "#e0725e" : accent.solid,
-                    color: isTraining ? "#1a1512" : accent.text,
-                    fontSize: 14,
-                    fontWeight: 600,
-                    cursor: "pointer",
-                    marginBottom: 16,
-                  }}
-                >
-                  {isTraining ? "Terminar" : "Empezar"}
-                </button>
+                <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
+                  <button
+                    onClick={toggleTraining}
+                    style={{
+                      padding: "7px 18px",
+                      borderRadius: 999,
+                      border: "none",
+                      background: isTraining ? "#e0725e" : accent.solid,
+                      color: isTraining ? "#1a1512" : accent.text,
+                      fontSize: 14,
+                      fontWeight: 600,
+                      cursor: "pointer",
+                    }}
+                  >
+                    {isTraining ? "Terminar" : "Empezar"}
+                  </button>
+                  <button
+                    onClick={openRestTimer}
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 6,
+                      padding: "7px 16px",
+                      borderRadius: 999,
+                      border: "1px solid #33312e",
+                      background: "#1f1e1c",
+                      color: "#f2ede6",
+                      fontSize: 13.5,
+                      fontWeight: 500,
+                      cursor: "pointer",
+                    }}
+                  >
+                    <Timer size={15} color={accent.solid} /> Descansar
+                  </button>
+                </div>
 
                 {exercises.map((ex) => {
                   const pr = prOf(ex);
@@ -1909,6 +1970,19 @@ export default function App() {
               </DashedButton>
             </div>
           </>
+        )}
+
+        {restTimerOpen && (
+          <RestTimerOverlay
+            accent={accent}
+            presetIndex={restPresetIndex}
+            onPickPreset={pickRestPreset}
+            secondsLeft={restSecondsLeft}
+            running={restRunning}
+            onToggleRunning={() => setRestRunning((v) => !v)}
+            onReset={resetRestTimer}
+            onClose={() => setRestTimerOpen(false)}
+          />
         )}
       </div>
     );
@@ -2012,6 +2086,7 @@ export default function App() {
     return (
       <div style={shell}>
         {success && <SuccessOverlay message={success} />}
+        {recordCelebration && <NewRecordOverlay {...recordCelebration} />}
         <TopBar title={currentExercise.name} onBack={() => setScreen("dayDetail")} />
 
         <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 6 }}>
@@ -2126,6 +2201,7 @@ export default function App() {
     return (
       <div style={shell}>
         {success && <SuccessOverlay message={success} />}
+        {recordCelebration && <NewRecordOverlay {...recordCelebration} />}
         <TopBar title={editRecordId ? "Editar registro" : "Nuevo registro"} onBack={() => setScreen("exerciseDetail")} />
         <Field label="Fecha" type="date" value={recordForm.fecha} onChange={(e) => setRecordForm({ ...recordForm, fecha: e.target.value })} />
         <Field label="Peso (kg)" type="number" min="0" step="0.5" value={recordForm.peso} onChange={(e) => setRecordForm({ ...recordForm, peso: e.target.value })} placeholder="Ej. 80" />
