@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { Dumbbell, Plus, ChevronRight, ArrowLeft, Check, X, Eye, EyeOff, Trophy, Trash2, Star, Pencil, Share2, FolderClock, Download, Save, Copy } from "lucide-react";
+import { Dumbbell, Plus, ChevronRight, ArrowLeft, Check, X, Eye, EyeOff, Trophy, Trash2, Star, Pencil, Share2, FolderClock, Download, Save, Copy, Sparkles, ChevronDown, ChevronUp } from "lucide-react";
 import { auth, db } from "./firebase";
 import {
   createUserWithEmailAndPassword,
@@ -26,6 +26,14 @@ const ACCENTS = {
 };
 
 const ACCENT_STORAGE_KEY = "mirutina_accent";
+
+// Historial de cambios que se muestra en "Ver últimas actualizaciones".
+// Para agregar uno nuevo, súmalo arriba de la lista (el más reciente primero).
+const UPDATES = [
+  { date: "10 sept 2026", text: "Ahora puedes cambiar el color de toda la app desde el lápiz de arriba." },
+  { date: "3 sept 2026", text: "Se puede compartir tu rutina con un código para que un amigo la importe." },
+  { date: "28 ago 2026", text: "Los ejercicios personalizados ahora se marcan con una estrella." },
+];
 
 // Color activo del usuario. Se actualiza al inicio de cada render de <App>
 // para que PrimaryButton, DashedButton y PillButton (definidos abajo, fuera
@@ -300,6 +308,7 @@ export default function App() {
   const [success, setSuccess] = useState(null);
   const [showPw, setShowPw] = useState(false);
   const [accentPickerOpen, setAccentPickerOpen] = useState(false);
+  const [updatesOpen, setUpdatesOpen] = useState(false);
 
   const [currentUser, setCurrentUser] = useState(null);
   const [rutina, setRutina] = useState({});
@@ -1206,6 +1215,43 @@ export default function App() {
             <ChevronRight size={17} color={accent.text} strokeWidth={2.5} />
           </div>
         </button>
+
+        <button
+          onClick={() => setUpdatesOpen((v) => !v)}
+          style={{
+            width: "100%",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            gap: 6,
+            padding: "10px 0 4px",
+            marginTop: 10,
+            background: "none",
+            border: "none",
+            color: "#8a8580",
+            fontSize: 12.5,
+            fontWeight: 500,
+            cursor: "pointer",
+          }}
+        >
+          <Sparkles size={13} color={accent.solid} />
+          Ver últimas actualizaciones
+          {updatesOpen ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+        </button>
+
+        {updatesOpen && (
+          <div style={{ marginTop: 8, border: "1px solid #2a2824", borderRadius: 16, overflow: "hidden" }}>
+            {UPDATES.map((u, i) => (
+              <div key={i} style={{ padding: "12px 14px", borderTop: i === 0 ? "none" : "1px solid #232019", display: "flex", gap: 10 }}>
+                <div style={{ width: 6, height: 6, borderRadius: "50%", background: accent.solid, marginTop: 6, flexShrink: 0 }} />
+                <div>
+                  <div style={{ fontSize: 11, color: "#6e6a65", marginBottom: 2 }}>{u.date}</div>
+                  <div style={{ fontSize: 13, color: "#d7d2ca", lineHeight: 1.4 }}>{u.text}</div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
     );
   }
