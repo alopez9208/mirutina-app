@@ -25,6 +25,13 @@ const ACCENTS = {
   purpura: { name: "Púrpura", from: "#a480ff", to: "#7248d6", solid: "#a480ff", text: "#160b2e" },
 };
 
+const ACCENT_STORAGE_KEY = "mirutina_accent";
+
+// Color activo del usuario. Se actualiza al inicio de cada render de <App>
+// para que PrimaryButton, DashedButton y PillButton (definidos abajo, fuera
+// de App) puedan pintarse con el color elegido sin recibirlo por props.
+let CURRENT_ACCENT = ACCENTS.coral;
+
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
 function todayISO() {
   return new Date().toISOString().slice(0, 10);
@@ -93,7 +100,7 @@ function PillButton({ children, onClick, subtitle, compact, muted, starred, onEd
         gap: 12,
         padding: compact ? "11px 16px" : "16px 18px",
         borderRadius: compact ? 16 : 999,
-        border: checked ? "1px solid #3fa863" : highlighted ? "1.5px solid #d97757" : "1px solid #33312e",
+        border: checked ? "1px solid #3fa863" : highlighted ? `1.5px solid ${CURRENT_ACCENT.solid}` : "1px solid #33312e",
         background: checked ? "#15271c" : highlighted ? "#2a1d15" : "#1f1e1c",
         color: "#f2ede6",
         fontSize: 16,
@@ -104,7 +111,7 @@ function PillButton({ children, onClick, subtitle, compact, muted, starred, onEd
     >
       <span style={{ flex: 1, minWidth: 0 }}>
         <div style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", display: "flex", alignItems: "center", gap: 6 }}>
-          {starred && <Star size={13} color="#d97757" fill="#d97757" style={{ flexShrink: 0 }} />}
+          {starred && <Star size={13} color={CURRENT_ACCENT.solid} fill={CURRENT_ACCENT.solid} style={{ flexShrink: 0 }} />}
           <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{children}</span>
         </div>
         {subtitle && (
@@ -219,8 +226,8 @@ function PrimaryButton({ children, onClick, disabled, style }) {
         padding: "14px 18px",
         borderRadius: 999,
         border: "none",
-        background: disabled ? "#4a3a30" : "#d97757",
-        color: "#1a1512",
+        background: disabled ? "#4a3a30" : CURRENT_ACCENT.solid,
+        color: CURRENT_ACCENT.text,
         fontSize: 16,
         fontWeight: 600,
         cursor: disabled ? "default" : "pointer",
@@ -247,7 +254,7 @@ function DashedButton({ children, onClick }) {
         borderRadius: 999,
         border: "1.5px dashed #4a4640",
         background: "transparent",
-        color: "#d97757",
+        color: CURRENT_ACCENT.solid,
         fontSize: 14.5,
         fontWeight: 600,
         cursor: "pointer",
@@ -274,8 +281,8 @@ function TopBar({ title, onBack }) {
 function SuccessOverlay({ message }) {
   return (
     <div style={{ position: "absolute", inset: 0, background: "rgba(15,14,13,0.88)", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 14, zIndex: 50, animation: "fadeIn 0.18s ease-out" }}>
-      <div style={{ width: 64, height: 64, borderRadius: "50%", background: "#d97757", display: "flex", alignItems: "center", justifyContent: "center", animation: "popIn 0.35s cubic-bezier(.34,1.56,.64,1)" }}>
-        <Check size={32} color="#1a1512" strokeWidth={3} />
+      <div style={{ width: 64, height: 64, borderRadius: "50%", background: CURRENT_ACCENT.solid, display: "flex", alignItems: "center", justifyContent: "center", animation: "popIn 0.35s cubic-bezier(.34,1.56,.64,1)" }}>
+        <Check size={32} color={CURRENT_ACCENT.text} strokeWidth={3} />
       </div>
       <div style={{ color: "#f2ede6", fontSize: 15, fontWeight: 500 }}>{message}</div>
       <style>{`
@@ -292,6 +299,7 @@ export default function App() {
   const [error, setError] = useState("");
   const [success, setSuccess] = useState(null);
   const [showPw, setShowPw] = useState(false);
+  const [accentPickerOpen, setAccentPickerOpen] = useState(false);
 
   const [currentUser, setCurrentUser] = useState(null);
   const [rutina, setRutina] = useState({});
@@ -469,6 +477,11 @@ export default function App() {
 
   async function updateAccentColor(key) {
     setCurrentUser((prev) => ({ ...prev, accentColor: key }));
+    try {
+      localStorage.setItem(ACCENT_STORAGE_KEY, key);
+    } catch (e) {
+      // localStorage no disponible (modo privado, etc.) — no es crítico.
+    }
     await setDoc(doc(db, "users", currentUser.uid), { accentColor: key }, { merge: true });
   }
 
@@ -907,6 +920,17 @@ export default function App() {
     setScreen("exerciseDetail");
   }
 
+  // ---------- color activo ----------
+  let savedAccentKey = "coral";
+  try {
+    savedAccentKey = localStorage.getItem(ACCENT_STORAGE_KEY) || "coral";
+  } catch (e) {
+    // localStorage no disponible — usamos el valor por defecto.
+  }
+  const accentKey = currentUser?.accentColor || savedAccentKey;
+  const accent = ACCENTS[accentKey] || ACCENTS.coral;
+  CURRENT_ACCENT = accent;
+
   // ---------- shared shell ----------
   const shell = {
     minHeight: "100vh",
@@ -934,7 +958,7 @@ export default function App() {
             padding: "34px 26px",
             marginBottom: 30,
             marginTop: 20,
-            background: "linear-gradient(145deg, #ff7a54 0%, #e0562f 100%)",
+            background: `linear-gradient(145deg, ${accent.from} 0%, ${accent.to} 100%)`,
             overflow: "hidden",
           }}
         >
@@ -942,10 +966,10 @@ export default function App() {
           <div style={{ position: "absolute", bottom: -60, left: -30, width: 130, height: 130, borderRadius: "50%", background: "rgba(255,255,255,0.07)" }} />
           <div style={{ position: "relative" }}>
             <div style={{ width: 44, height: 44, borderRadius: 14, background: "rgba(255,255,255,0.18)", display: "flex", alignItems: "center", justifyContent: "center", marginBottom: 14 }}>
-              <Dumbbell size={22} color="#1a1512" />
+              <Dumbbell size={22} color={accent.text} />
             </div>
-            <div style={{ fontSize: 24, fontWeight: 800, color: "#1a1512" }}>MiRutina</div>
-            <div style={{ fontSize: 13.5, color: "rgba(26,21,18,0.7)", marginTop: 4 }}>Inicia sesión para continuar</div>
+            <div style={{ fontSize: 24, fontWeight: 800, color: accent.text }}>MiRutina</div>
+            <div style={{ fontSize: 13.5, color: accent.text, opacity: 0.7, marginTop: 4 }}>Inicia sesión para continuar</div>
           </div>
         </div>
         <label style={{ display: "block", marginBottom: 14 }}>
@@ -973,12 +997,12 @@ export default function App() {
         {error && <div style={{ color: "#e0725e", fontSize: 13.5, marginBottom: 12 }}>{error}</div>}
         <button
           onClick={handleLogin}
-          style={{ width: "100%", padding: "15px 18px", borderRadius: 16, border: "none", background: "#ff7a54", color: "#1a1512", fontSize: 16, fontWeight: 700, cursor: "pointer" }}
+          style={{ width: "100%", padding: "15px 18px", borderRadius: 16, border: "none", background: accent.solid, color: accent.text, fontSize: 16, fontWeight: 700, cursor: "pointer" }}
         >
           Iniciar sesión
         </button>
         <div style={{ display: "flex", justifyContent: "space-between", marginTop: 22, fontSize: 13.5 }}>
-          <button onClick={() => { setError(""); setScreen("register"); }} style={{ background: "none", border: "none", color: "#ff7a54", cursor: "pointer", padding: 0, fontWeight: 600 }}>
+          <button onClick={() => { setError(""); setScreen("register"); }} style={{ background: "none", border: "none", color: accent.solid, cursor: "pointer", padding: 0, fontWeight: 600 }}>
             Crear cuenta nueva
           </button>
           <button onClick={() => { setError(""); setScreen("recover"); }} style={{ background: "none", border: "none", color: "#8a8580", cursor: "pointer", padding: 0 }}>
@@ -1021,14 +1045,80 @@ export default function App() {
 
   // ---------- HOME ----------
   if (screen === "home") {
-    const accent = ACCENTS[currentUser?.accentColor || "coral"];
     return (
       <div style={shell}>
         {success && <SuccessOverlay message={success} />}
-        <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 8 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8, position: "relative" }}>
+          <button
+            onClick={() => setAccentPickerOpen((v) => !v)}
+            aria-label="Cambiar color de la app"
+            style={{
+              width: 30,
+              height: 30,
+              borderRadius: "50%",
+              border: "1px solid #2f2c28",
+              background: "#1f1e1c",
+              color: accent.solid,
+              cursor: "pointer",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              padding: 0,
+            }}
+          >
+            <Pencil size={13} />
+          </button>
           <button onClick={logout} style={{ background: "none", border: "none", color: "#6e6a65", fontSize: 13, cursor: "pointer" }}>
             Salir
           </button>
+
+          {accentPickerOpen && (
+            <div
+              style={{
+                position: "absolute",
+                top: 36,
+                left: 0,
+                background: "#1f1e1c",
+                border: "1px solid #2f2c28",
+                borderRadius: 16,
+                padding: 10,
+                display: "flex",
+                gap: 8,
+                zIndex: 10,
+                boxShadow: "0 8px 20px rgba(0,0,0,0.35)",
+              }}
+            >
+              {Object.entries(ACCENTS).map(([key, opt]) => (
+                <button
+                  key={key}
+                  onClick={() => {
+                    updateAccentColor(key);
+                    setAccentPickerOpen(false);
+                  }}
+                  aria-label={opt.name}
+                  style={{
+                    width: 28,
+                    height: 28,
+                    borderRadius: "50%",
+                    border: accentKey === key ? "2px solid #f2ede6" : "2px solid transparent",
+                    padding: 2,
+                    background: "transparent",
+                    cursor: "pointer",
+                  }}
+                >
+                  <span
+                    style={{
+                      display: "block",
+                      width: "100%",
+                      height: "100%",
+                      borderRadius: "50%",
+                      background: `linear-gradient(145deg, ${opt.from} 0%, ${opt.to} 100%)`,
+                    }}
+                  />
+                </button>
+              ))}
+            </div>
+          )}
         </div>
 
         <div
@@ -1116,38 +1206,6 @@ export default function App() {
             <ChevronRight size={17} color={accent.text} strokeWidth={2.5} />
           </div>
         </button>
-
-        <div style={{ marginTop: 22 }}>
-          <div style={{ fontSize: 12, color: "#6e6a65", marginBottom: 10 }}>Color de la app</div>
-          <div style={{ display: "flex", gap: 12 }}>
-            {Object.entries(ACCENTS).map(([key, opt]) => (
-              <button
-                key={key}
-                onClick={() => updateAccentColor(key)}
-                aria-label={opt.name}
-                style={{
-                  width: 34,
-                  height: 34,
-                  borderRadius: "50%",
-                  border: (currentUser?.accentColor || "coral") === key ? "2px solid #f2ede6" : "2px solid transparent",
-                  padding: 2,
-                  background: "transparent",
-                  cursor: "pointer",
-                }}
-              >
-                <span
-                  style={{
-                    display: "block",
-                    width: "100%",
-                    height: "100%",
-                    borderRadius: "50%",
-                    background: `linear-gradient(145deg, ${opt.from} 0%, ${opt.to} 100%)`,
-                  }}
-                />
-              </button>
-            ))}
-          </div>
-        </div>
       </div>
     );
   }
@@ -1173,7 +1231,7 @@ export default function App() {
                   gap: 12,
                   padding: "12px 14px",
                   borderRadius: 18,
-                  border: isToday ? "1.5px solid #ff7a54" : "1px solid #2f2c28",
+                  border: isToday ? `1.5px solid ${accent.solid}` : "1px solid #2f2c28",
                   background: isToday ? "#2a1d15" : "#1a1917",
                   color: "#f2ede6",
                   fontSize: 16,
@@ -1193,14 +1251,14 @@ export default function App() {
                     width: 30,
                     height: 30,
                     borderRadius: "50%",
-                    background: isToday ? "#ff7a54" : "#2a2824",
+                    background: isToday ? accent.solid : "#2a2824",
                     display: "flex",
                     alignItems: "center",
                     justifyContent: "center",
                     flexShrink: 0,
                   }}
                 >
-                  <ChevronRight size={15} color={isToday ? "#1a1512" : "#8a8580"} strokeWidth={2.5} />
+                  <ChevronRight size={15} color={isToday ? accent.text : "#8a8580"} strokeWidth={2.5} />
                 </div>
               </button>
             </div>
@@ -1283,8 +1341,8 @@ export default function App() {
                 padding: "8px 12px",
                 borderRadius: 999,
                 border: "none",
-                background: "#ff7a54",
-                color: "#1a1512",
+                background: accent.solid,
+                color: accent.text,
                 fontSize: 12.5,
                 fontWeight: 600,
                 cursor: "pointer",
@@ -1334,7 +1392,7 @@ export default function App() {
               >
                 <span style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ display: "flex", alignItems: "center", gap: 6, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                    {r.source === "importado" && <Star size={12} color="#ff7a54" fill="#ff7a54" style={{ flexShrink: 0 }} />}
+                    {r.source === "importado" && <Star size={12} color={accent.solid} fill={accent.solid} style={{ flexShrink: 0 }} />}
                     <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.name}</span>
                   </div>
                   <div style={{ fontSize: 12, color: "#8a8580", marginTop: 3 }}>{r.source === "importado" ? "Importada" : "Guardada por ti"}</div>
@@ -1395,7 +1453,7 @@ export default function App() {
                 </div>
                 <button
                   onClick={() => activateSavedRoutine(openSavedId)}
-                  style={{ flexShrink: 0, fontSize: 12, fontWeight: 600, color: "#1a1512", background: "#ff7a54", border: "none", borderRadius: 999, padding: "8px 14px", cursor: "pointer" }}
+                  style={{ flexShrink: 0, fontSize: 12, fontWeight: 600, color: accent.text, background: accent.solid, border: "none", borderRadius: 999, padding: "8px 14px", cursor: "pointer" }}
                 >
                   Activar
                 </button>
@@ -1456,7 +1514,7 @@ export default function App() {
               borderRadius: 999,
               border: "1.5px dashed #4a4640",
               background: "transparent",
-              color: "#d97757",
+              color: accent.solid,
               fontSize: 14,
               fontWeight: 600,
               cursor: "pointer",
@@ -1478,7 +1536,7 @@ export default function App() {
             />
             <button
               onClick={importRoutineByCode}
-              style={{ display: "flex", alignItems: "center", gap: 6, padding: "0 16px", borderRadius: 12, border: "none", background: "#ff7a54", color: "#1a1512", fontWeight: 600, fontSize: 14, cursor: "pointer" }}
+              style={{ display: "flex", alignItems: "center", gap: 6, padding: "0 16px", borderRadius: 12, border: "none", background: accent.solid, color: accent.text, fontWeight: 600, fontSize: 14, cursor: "pointer" }}
             >
               <Download size={15} /> Agregar
             </button>
@@ -1573,8 +1631,8 @@ export default function App() {
                     padding: "7px 18px",
                     borderRadius: 999,
                     border: "none",
-                    background: isTraining ? "#e0725e" : "#d97757",
-                    color: "#1a1512",
+                    background: isTraining ? "#e0725e" : accent.solid,
+                    color: isTraining ? "#1a1512" : accent.text,
                     fontSize: 14,
                     fontWeight: 600,
                     cursor: "pointer",
@@ -1716,7 +1774,7 @@ export default function App() {
 
         <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 6 }}>
           <div style={{ width: 40, height: 40, borderRadius: "50%", background: "#2a2320", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-            <Trophy size={19} color="#d97757" />
+            <Trophy size={19} color={accent.solid} />
           </div>
           <div>
             <div style={{ fontSize: 20, fontWeight: 700 }}>{pr !== null ? `${pr} kg` : "Sin registros aún"}</div>
@@ -1740,7 +1798,7 @@ export default function App() {
             {records.map((r) => (
               <div key={r.id} onClick={() => openEditRecord(r)} style={{ display: "flex", padding: "12px 14px", fontSize: 13.5, borderTop: "1px solid #232019", color: "#d7d2ca", cursor: "pointer" }}>
                 <div style={{ flex: 1.2 }}>{r.fecha}</div>
-                <div style={{ flex: 0.8, textAlign: "right", color: r.peso === pr ? "#d97757" : "#d7d2ca", fontWeight: r.peso === pr ? 700 : 400 }}>{r.peso} kg</div>
+                <div style={{ flex: 0.8, textAlign: "right", color: r.peso === pr ? accent.solid : "#d7d2ca", fontWeight: r.peso === pr ? 700 : 400 }}>{r.peso} kg</div>
                 <div style={{ flex: 1, textAlign: "right", color: "#a39d95" }}>{r.series}x{r.repeticiones}</div>
               </div>
             ))}
