@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { Dumbbell, Plus, ChevronRight, ArrowLeft, Check, Eye, EyeOff, Trophy, Trash2, Star, Pencil } from "lucide-react";
+import { Dumbbell, Plus, ChevronRight, ArrowLeft, Check, X, Eye, EyeOff, Trophy, Trash2, Star, Pencil, Share2, FolderClock, Download, Save, Copy } from "lucide-react";
 import { auth, db } from "./firebase";
 import {
   createUserWithEmailAndPassword,
@@ -9,6 +9,13 @@ import {
   signOut,
 } from "firebase/auth";
 import { doc, getDoc, setDoc, deleteDoc, collection, getDocs } from "firebase/firestore";
+
+function generateShareCode() {
+  const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+  let code = "";
+  for (let i = 0; i < 6; i++) code += chars[Math.floor(Math.random() * chars.length)];
+  return code;
+}
 
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
 function todayISO() {
@@ -294,6 +301,17 @@ export default function App() {
   const [trainingDayKey, setTrainingDayKey] = useState(null);
   const [trainingCompleted, setTrainingCompleted] = useState(new Set());
 
+  const [savedRoutinesMap, setSavedRoutinesMap] = useState({});
+  const [openSavedId, setOpenSavedId] = useState(null);
+  const [renamingSavedId, setRenamingSavedId] = useState(null);
+  const [renameSavedValue, setRenameSavedValue] = useState("");
+  const [savingCurrent, setSavingCurrent] = useState(false);
+  const [saveNameValue, setSaveNameValue] = useState("");
+  const [importCode, setImportCode] = useState("");
+  const [importMsg, setImportMsg] = useState("");
+  const [shareCode, setShareCode] = useState(null);
+  const [sharing, setSharing] = useState(false);
+
   const [loginForm, setLoginForm] = useState({ username: "", password: "" });
   const [registerForm, setRegisterForm] = useState({ email: "", username: "", password: "", confirm: "" });
   const [recoverForm, setRecoverForm] = useState({ username: "" });
@@ -325,10 +343,11 @@ export default function App() {
   }
 
   async function loadRutina(user) {
-    const [rutinaSnap, exercisesSnap, routinesSnap] = await Promise.all([
+    const [rutinaSnap, exercisesSnap, routinesSnap, savedRoutinesSnap] = await Promise.all([
       getDocs(collection(db, "users", user.uid, "rutina")),
       getDocs(collection(db, "users", user.uid, "exercises")),
       getDocs(collection(db, "users", user.uid, "customRoutines")),
+      getDocs(collection(db, "users", user.uid, "savedRoutines")),
     ]);
     const data = {};
     rutinaSnap.docs.forEach((d) => {
@@ -345,6 +364,11 @@ export default function App() {
       routinesData[d.id] = d.data();
     });
     setCustomRoutinesMap(routinesData);
+    const savedData = {};
+    savedRoutinesSnap.docs.forEach((d) => {
+      savedData[d.id] = d.data();
+    });
+    setSavedRoutinesMap(savedData);
   }
 
   // ---------- auth ----------
@@ -413,6 +437,7 @@ export default function App() {
     setRutina({});
     setExercisesMap({});
     setCustomRoutinesMap({});
+    setSavedRoutinesMap({});
     setLoginForm({ username: "", password: "" });
     setScreen("login");
   }
@@ -438,6 +463,120 @@ export default function App() {
     await setDoc(doc(db, "users", currentUser.uid, "customRoutines", id), data);
     setCustomRoutinesMap((prev) => ({ ...prev, [id]: data }));
     return data;
+  }
+
+  // ---------- rutinas guardadas: compartir / importar ----------
+  function buildRoutineSnapshot() {
+    const days = {};
+    DAYS.forEach((d) => {
+      const day = getDay(d.key);
+      days[d.key] = {
+        category: day.category || null,
+        customLabel: day.category === "personalizada" ? dayRoutineLabel(day) : null,
+        plan: (day.plan || []).map((p) => {
+          const ex = exercisesMap[p.exerciseId] || {};
+          return { exerciseId: p.exerciseId, order: p.order, sets: p.sets, reps: p.reps, name: ex.name || "", custom: !!ex.custom };
+        }),
+      };
+    });
+    return days;
+  }
+
+  async function saveCurrentAsRoutine(name) {
+    const id = "sr-" + uid();
+    const data = { name: name.trim() || "Mi rutina", source: "propio", days: buildRoutineSnapshot(), createdAt: Date.now() };
+    await setDoc(doc(db, "users", currentUser.uid, "savedRoutines", id), data);
+    setSavedRoutinesMap((prev) => ({ ...prev, [id]: data }));
+    return id;
+  }
+
+  async function renameSavedRoutine(id, newName) {
+    const existing = savedRoutinesMap[id];
+    if (!existing) return;
+    const updated = { ...existing, name: newName.trim() || existing.name };
+    await setDoc(doc(db, "users", currentUser.uid, "savedRoutines", id), updated);
+    setSavedRoutinesMap((prev) => ({ ...prev, [id]: updated }));
+  }
+
+  async function deleteSavedRoutine(id) {
+    await deleteDoc(doc(db, "users", currentUser.uid, "savedRoutines", id));
+    setSavedRoutinesMap((prev) => {
+      const next = { ...prev };
+      delete next[id];
+      return next;
+    });
+    if (openSavedId === id) setOpenSavedId(null);
+  }
+
+  async function activateSavedRoutine(id) {
+    const routine = savedRoutinesMap[id];
+    if (!routine) return;
+    const remappedDays = {};
+    for (const d of DAYS) {
+      const snap = routine.days[d.key] || { category: null, customLabel: null, plan: [] };
+      const newPlan = [];
+      const newPlanWithMeta = [];
+      for (const item of snap.plan) {
+        let exerciseId = item.exerciseId;
+        if (!exercisesMap[exerciseId]) {
+          if (item.custom) exerciseId = "cx-" + uid();
+          await saveExercise(exerciseId, { name: item.name, custom: !!item.custom, records: [] });
+        }
+        newPlan.push({ exerciseId, order: item.order, sets: item.sets, reps: item.reps });
+        newPlanWithMeta.push({ exerciseId, order: item.order, sets: item.sets, reps: item.reps, name: item.name, custom: item.custom });
+      }
+      const dayData = { category: snap.category, plan: newPlan };
+      if (snap.category === "personalizada") dayData.customLabel = snap.customLabel;
+      await saveDay(d.key, dayData);
+      remappedDays[d.key] = { category: snap.category, customLabel: snap.customLabel, plan: newPlanWithMeta };
+    }
+    if (routine.source === "importado") {
+      const updated = { ...routine, days: remappedDays };
+      await setDoc(doc(db, "users", currentUser.uid, "savedRoutines", id), updated);
+      setSavedRoutinesMap((prev) => ({ ...prev, [id]: updated }));
+    }
+    setOpenSavedId(null);
+    flashSuccess("Rutina activada");
+    setScreen("days");
+  }
+
+  async function shareCurrentRoutine() {
+    setSharing(true);
+    try {
+      const code = generateShareCode();
+      const data = { ownerUid: currentUser.uid, ownerName: currentUser.username, days: buildRoutineSnapshot(), createdAt: Date.now() };
+      await setDoc(doc(db, "sharedRoutines", code), data);
+      setShareCode(code);
+    } catch (e) {
+      setImportMsg("error:No se pudo generar el código.");
+    } finally {
+      setSharing(false);
+    }
+  }
+
+  async function importRoutineByCode() {
+    setImportMsg("");
+    const code = importCode.trim().toUpperCase();
+    if (!code) {
+      setImportMsg("error:Escribe un código.");
+      return;
+    }
+    try {
+      const snap = await getDoc(doc(db, "sharedRoutines", code));
+      if (!snap.exists()) {
+        setImportMsg("error:Ese código no existe.");
+        return;
+      }
+      const shared = snap.data();
+      const id = "sr-" + uid();
+      const data = { name: `Rutina de ${shared.ownerName || "un amigo"}`, source: "importado", days: shared.days, createdAt: Date.now() };
+      await setDoc(doc(db, "users", currentUser.uid, "savedRoutines", id), data);
+      setSavedRoutinesMap((prev) => ({ ...prev, [id]: data }));
+      setImportCode("");
+      setImportMsg("ok:¡Rutina importada! Ábrela y dale Activar.");
+    } catch (e) {
+      setImportMsg("error:No se pudo importar.");
+    }
   }
 
   function combinedDayExercises(dayKey) {
@@ -941,6 +1080,7 @@ export default function App() {
     return (
       <div style={shell}>
         <TopBar title="Mi rutina" onBack={() => setScreen("home")} />
+        {success && <SuccessOverlay message={success} />}
         {DAYS.map((d) => {
           const day = getDay(d.key);
           return (
@@ -956,6 +1096,285 @@ export default function App() {
             </PillButton>
           );
         })}
+
+        <div style={{ display: "flex", gap: 8, marginTop: 18 }}>
+          <button
+            onClick={() => {
+              setShareCode(null);
+              shareCurrentRoutine();
+            }}
+            disabled={sharing}
+            style={{
+              flex: 1,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              gap: 6,
+              padding: "9px 12px",
+              borderRadius: 999,
+              border: "1px solid #2f2c28",
+              background: "transparent",
+              color: "#8a8580",
+              fontSize: 12.5,
+              fontWeight: 500,
+              cursor: "pointer",
+            }}
+          >
+            <Share2 size={13} /> {sharing ? "Generando..." : "Compartir"}
+          </button>
+          <button
+            onClick={() => setScreen("savedRoutines")}
+            style={{
+              flex: 1,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              gap: 6,
+              padding: "9px 12px",
+              borderRadius: 999,
+              border: "1px solid #2f2c28",
+              background: "transparent",
+              color: "#8a8580",
+              fontSize: 12.5,
+              fontWeight: 500,
+              cursor: "pointer",
+            }}
+          >
+            <FolderClock size={13} /> Rutinas guardadas
+          </button>
+        </div>
+
+        {shareCode && (
+          <div
+            style={{
+              marginTop: 12,
+              padding: "12px 14px",
+              borderRadius: 14,
+              border: "1px solid #2a2824",
+              background: "#1a1917",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              gap: 10,
+            }}
+          >
+            <div>
+              <div style={{ fontSize: 11.5, color: "#8a8580" }}>Tu código para compartir</div>
+              <div style={{ fontSize: 18, fontWeight: 700, letterSpacing: 2 }}>{shareCode}</div>
+            </div>
+            <button
+              onClick={() => {
+                if (navigator.clipboard) navigator.clipboard.writeText(shareCode);
+              }}
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 6,
+                padding: "8px 12px",
+                borderRadius: 999,
+                border: "none",
+                background: "#ff7a54",
+                color: "#1a1512",
+                fontSize: 12.5,
+                fontWeight: 600,
+                cursor: "pointer",
+              }}
+            >
+              <Copy size={13} /> Copiar
+            </button>
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  // ---------- RUTINAS GUARDADAS ----------
+  if (screen === "savedRoutines") {
+    const savedList = Object.entries(savedRoutinesMap).sort((a, b) => (b[1].createdAt || 0) - (a[1].createdAt || 0));
+    const openRoutine = openSavedId ? savedRoutinesMap[openSavedId] : null;
+    return (
+      <div style={shell}>
+        <TopBar title="Rutinas guardadas" onBack={() => setScreen("days")} />
+        {success && <SuccessOverlay message={success} />}
+
+        {savedList.length === 0 && (
+          <div style={{ color: "#8a8580", fontSize: 14, marginBottom: 16 }}>Aún no tienes rutinas guardadas.</div>
+        )}
+
+        {savedList.map(([id, r]) => (
+          <div key={id} style={{ display: "flex", alignItems: "center", gap: 4, marginBottom: 8 }}>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <button
+                onClick={() => setOpenSavedId(id === openSavedId ? null : id)}
+                style={{
+                  width: "100%",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 12,
+                  padding: "14px 16px",
+                  borderRadius: 18,
+                  border: "1px solid #33312e",
+                  background: "#1f1e1c",
+                  color: "#f2ede6",
+                  fontSize: 15.5,
+                  fontWeight: 500,
+                  textAlign: "left",
+                  cursor: "pointer",
+                }}
+              >
+                <span style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 6, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                    {r.source === "importado" && <Star size={12} color="#ff7a54" fill="#ff7a54" style={{ flexShrink: 0 }} />}
+                    <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.name}</span>
+                  </div>
+                  <div style={{ fontSize: 12, color: "#8a8580", marginTop: 3 }}>{r.source === "importado" ? "Importada" : "Guardada por ti"}</div>
+                </span>
+                <ChevronRight size={17} color="#6e6a65" style={{ flexShrink: 0 }} />
+              </button>
+            </div>
+            <button
+              onClick={() => deleteSavedRoutine(id)}
+              style={{ width: 44, height: 44, flexShrink: 0, border: "none", background: "transparent", color: "#5c5851", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}
+            >
+              <Trash2 size={16} />
+            </button>
+          </div>
+        ))}
+
+        {openRoutine && (
+          <div style={{ background: "#1a1917", border: "1px solid #2a2824", borderRadius: 16, padding: "14px 16px", marginBottom: 18 }}>
+            {renamingSavedId === openSavedId ? (
+              <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
+                <input
+                  autoFocus
+                  value={renameSavedValue}
+                  onChange={(e) => setRenameSavedValue(e.target.value)}
+                  style={{ flex: 1, background: "#141311", border: "1px solid #3a3630", borderRadius: 10, color: "#f2ede6", padding: "10px 12px", fontSize: 14.5 }}
+                />
+                <button
+                  onClick={async () => {
+                    await renameSavedRoutine(openSavedId, renameSavedValue);
+                    setRenamingSavedId(null);
+                  }}
+                  style={{ width: 40, height: 40, flexShrink: 0, border: "none", borderRadius: 10, background: "#3fa863", color: "#0f1a12", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}
+                >
+                  <Check size={17} />
+                </button>
+                <button
+                  onClick={() => setRenamingSavedId(null)}
+                  style={{ width: 40, height: 40, flexShrink: 0, border: "1px solid #35322e", borderRadius: 10, background: "transparent", color: "#a39d95", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}
+                >
+                  <X size={17} />
+                </button>
+              </div>
+            ) : (
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}>
+                  <div style={{ fontSize: 12, color: "#8a8580", fontWeight: 700, letterSpacing: 0.4, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                    {openRoutine.name.toUpperCase()}
+                  </div>
+                  <button
+                    onClick={() => {
+                      setRenamingSavedId(openSavedId);
+                      setRenameSavedValue(openRoutine.name);
+                    }}
+                    style={{ width: 32, height: 32, flexShrink: 0, border: "1px solid #35322e", borderRadius: 9, background: "transparent", color: "#c9c4bd", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}
+                  >
+                    <Pencil size={14} />
+                  </button>
+                </div>
+                <button
+                  onClick={() => activateSavedRoutine(openSavedId)}
+                  style={{ flexShrink: 0, fontSize: 12, fontWeight: 600, color: "#1a1512", background: "#ff7a54", border: "none", borderRadius: 999, padding: "8px 14px", cursor: "pointer" }}
+                >
+                  Activar
+                </button>
+              </div>
+            )}
+            {DAYS.map((d) => {
+              const snap = openRoutine.days[d.key] || { category: null, customLabel: null };
+              const label = snap.category === "personalizada" ? snap.customLabel : categoryLabel(snap.category);
+              return (
+                <div key={d.key} style={{ fontSize: 12.5, color: "#a39d95", marginBottom: 2 }}>
+                  <span style={{ color: "#d7d2ca" }}>{d.label}</span>: {snap.category ? label : "Descanso"}
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        {savingCurrent ? (
+          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 26 }}>
+            <input
+              autoFocus
+              value={saveNameValue}
+              onChange={(e) => setSaveNameValue(e.target.value)}
+              placeholder="Nombre de la rutina"
+              style={{ flex: 1, padding: "12px 14px", borderRadius: 12, border: "1px solid #35322e", background: "#1a1917", color: "#f2ede6", fontSize: 14.5, outline: "none" }}
+            />
+            <button
+              onClick={async () => {
+                if (!saveNameValue.trim()) return;
+                await saveCurrentAsRoutine(saveNameValue);
+                setSaveNameValue("");
+                setSavingCurrent(false);
+              }}
+              style={{ width: 44, height: 44, flexShrink: 0, border: "none", borderRadius: 12, background: "#3fa863", color: "#0f1a12", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}
+            >
+              <Check size={18} />
+            </button>
+            <button
+              onClick={() => {
+                setSavingCurrent(false);
+                setSaveNameValue("");
+              }}
+              style={{ width: 44, height: 44, flexShrink: 0, border: "1px solid #35322e", borderRadius: 12, background: "transparent", color: "#a39d95", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}
+            >
+              <X size={18} />
+            </button>
+          </div>
+        ) : (
+          <button
+            onClick={() => setSavingCurrent(true)}
+            style={{
+              width: "100%",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              gap: 8,
+              padding: "12px 18px",
+              borderRadius: 999,
+              border: "1.5px dashed #4a4640",
+              background: "transparent",
+              color: "#d97757",
+              fontSize: 14,
+              fontWeight: 600,
+              cursor: "pointer",
+              marginBottom: 26,
+            }}
+          >
+            <Save size={16} /> Guardar rutina actual
+          </button>
+        )}
+
+        <div style={{ paddingTop: 20, borderTop: "1px solid #2a2824" }}>
+          <div style={{ fontSize: 13, color: "#a39d95", marginBottom: 10 }}>¿Un amigo te compartió su rutina?</div>
+          <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
+            <input
+              value={importCode}
+              onChange={(e) => setImportCode(e.target.value)}
+              placeholder="Código, ej. FIT7K2"
+              style={{ flex: 1, padding: "12px 14px", borderRadius: 12, border: "1px solid #35322e", background: "#1a1917", color: "#f2ede6", fontSize: 14.5, outline: "none" }}
+            />
+            <button
+              onClick={importRoutineByCode}
+              style={{ display: "flex", alignItems: "center", gap: 6, padding: "0 16px", borderRadius: 12, border: "none", background: "#ff7a54", color: "#1a1512", fontWeight: 600, fontSize: 14, cursor: "pointer" }}
+            >
+              <Download size={15} /> Agregar
+            </button>
+          </div>
+          {importMsg && <div style={{ fontSize: 12.5, color: importMsg.startsWith("ok") ? "#3fa863" : "#e0725e" }}>{importMsg.split(":")[1]}</div>}
+        </div>
       </div>
     );
   }
