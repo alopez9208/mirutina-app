@@ -36,7 +36,7 @@ const UPDATES = [
   { date: "28 ago 2026", text: "Los ejercicios personalizados ahora se marcan con una estrella." },
 ];
 
-// Color activo del usuario. Se actualiza al inicio de cada render de <App>
+// Color activo del usuario. Se actualiza al inicioa de cada render de <App>
 // para que PrimaryButton, DashedButton y PillButton (definidos abajo, fuera
 // de App) puedan pintarse con el color elegido sin recibirlo por props.
 let CURRENT_ACCENT = ACCENTS.coral;
