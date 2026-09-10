@@ -914,29 +914,61 @@ export default function App() {
   if (screen === "login") {
     return (
       <div style={shell}>
-        <div style={{ marginTop: 40, marginBottom: 40 }}>
-          <div style={{ width: 52, height: 52, borderRadius: 16, background: "#d97757", display: "flex", alignItems: "center", justifyContent: "center", marginBottom: 18 }}>
-            <Dumbbell size={26} color="#1a1512" />
+        <div
+          style={{
+            position: "relative",
+            borderRadius: 28,
+            padding: "34px 26px",
+            marginBottom: 30,
+            marginTop: 20,
+            background: "linear-gradient(145deg, #ff7a54 0%, #e0562f 100%)",
+            overflow: "hidden",
+          }}
+        >
+          <div style={{ position: "absolute", top: -50, right: -30, width: 160, height: 160, borderRadius: "50%", background: "rgba(255,255,255,0.10)" }} />
+          <div style={{ position: "absolute", bottom: -60, left: -30, width: 130, height: 130, borderRadius: "50%", background: "rgba(255,255,255,0.07)" }} />
+          <div style={{ position: "relative" }}>
+            <div style={{ width: 44, height: 44, borderRadius: 14, background: "rgba(255,255,255,0.18)", display: "flex", alignItems: "center", justifyContent: "center", marginBottom: 14 }}>
+              <Dumbbell size={22} color="#1a1512" />
+            </div>
+            <div style={{ fontSize: 24, fontWeight: 800, color: "#1a1512" }}>MiRutina</div>
+            <div style={{ fontSize: 13.5, color: "rgba(26,21,18,0.7)", marginTop: 4 }}>Inicia sesión para continuar</div>
           </div>
-          <div style={{ fontSize: 26, fontWeight: 700 }}>MiRutina</div>
-          <div style={{ fontSize: 14, color: "#a39d95", marginTop: 4 }}>Inicia sesión para continuar</div>
         </div>
-        <Field label="Usuario" value={loginForm.username} onChange={(e) => setLoginForm({ ...loginForm, username: e.target.value })} placeholder="tu_usuario" />
-        <div style={{ position: "relative" }}>
-          <Field label="Contraseña" type={showPw ? "text" : "password"} value={loginForm.password} onChange={(e) => setLoginForm({ ...loginForm, password: e.target.value })} placeholder="••••••••" />
+        <label style={{ display: "block", marginBottom: 14 }}>
+          <div style={{ fontSize: 12.5, color: "#a39d95", marginBottom: 6, fontWeight: 500, letterSpacing: 0.2 }}>Usuario</div>
+          <input
+            value={loginForm.username}
+            onChange={(e) => setLoginForm({ ...loginForm, username: e.target.value })}
+            placeholder="tu_usuario"
+            style={{ width: "100%", boxSizing: "border-box", padding: "13px 14px", borderRadius: 14, border: "1px solid #2f2c28", background: "#1a1917", color: "#f2ede6", fontSize: 15.5, outline: "none" }}
+          />
+        </label>
+        <label style={{ display: "block", marginBottom: 22, position: "relative" }}>
+          <div style={{ fontSize: 12.5, color: "#a39d95", marginBottom: 6, fontWeight: 500, letterSpacing: 0.2 }}>Contraseña</div>
+          <input
+            type={showPw ? "text" : "password"}
+            value={loginForm.password}
+            onChange={(e) => setLoginForm({ ...loginForm, password: e.target.value })}
+            placeholder="••••••••"
+            style={{ width: "100%", boxSizing: "border-box", padding: "13px 14px", borderRadius: 14, border: "1px solid #2f2c28", background: "#1a1917", color: "#f2ede6", fontSize: 15.5, outline: "none" }}
+          />
           <button onClick={() => setShowPw(!showPw)} style={{ position: "absolute", right: 14, top: 32, background: "none", border: "none", color: "#8a8580", cursor: "pointer" }}>
             {showPw ? <EyeOff size={18} /> : <Eye size={18} />}
           </button>
-        </div>
+        </label>
         {error && <div style={{ color: "#e0725e", fontSize: 13.5, marginBottom: 12 }}>{error}</div>}
-        <div style={{ marginTop: 8 }}>
-          <PrimaryButton onClick={handleLogin}>Iniciar sesión</PrimaryButton>
-        </div>
-        <div style={{ display: "flex", justifyContent: "space-between", marginTop: 20, fontSize: 13.5 }}>
-          <button onClick={() => { setError(""); setScreen("register"); }} style={{ background: "none", border: "none", color: "#d97757", cursor: "pointer", padding: 0 }}>
+        <button
+          onClick={handleLogin}
+          style={{ width: "100%", padding: "15px 18px", borderRadius: 16, border: "none", background: "#ff7a54", color: "#1a1512", fontSize: 16, fontWeight: 700, cursor: "pointer" }}
+        >
+          Iniciar sesión
+        </button>
+        <div style={{ display: "flex", justifyContent: "space-between", marginTop: 22, fontSize: 13.5 }}>
+          <button onClick={() => { setError(""); setScreen("register"); }} style={{ background: "none", border: "none", color: "#ff7a54", cursor: "pointer", padding: 0, fontWeight: 600 }}>
             Crear cuenta nueva
           </button>
-          <button onClick={() => { setError(""); setScreen("recover"); }} style={{ background: "none", border: "none", color: "#a39d95", cursor: "pointer", padding: 0 }}>
+          <button onClick={() => { setError(""); setScreen("recover"); }} style={{ background: "none", border: "none", color: "#8a8580", cursor: "pointer", padding: 0 }}>
             Recuperar contraseña
           </button>
         </div>
@@ -1083,17 +1115,49 @@ export default function App() {
         {success && <SuccessOverlay message={success} />}
         {DAYS.map((d) => {
           const day = getDay(d.key);
+          const isToday = d.key === today;
           return (
-            <PillButton
-              key={d.key}
-              compact
-              onClick={() => openDay(d.key)}
-              subtitle={day.category ? dayRoutineLabel(day) : "Sin rutina asignada"}
-              muted={!day.category}
-              highlighted={d.key === today}
-            >
-              {d.label}
-            </PillButton>
+            <div key={d.key} style={{ marginBottom: 8 }}>
+              <button
+                onClick={() => openDay(d.key)}
+                style={{
+                  width: "100%",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 12,
+                  padding: "12px 14px",
+                  borderRadius: 18,
+                  border: isToday ? "1.5px solid #ff7a54" : "1px solid #2f2c28",
+                  background: isToday ? "#2a1d15" : "#1a1917",
+                  color: "#f2ede6",
+                  fontSize: 16,
+                  fontWeight: 500,
+                  textAlign: "left",
+                  cursor: "pointer",
+                }}
+              >
+                <span style={{ flex: 1, minWidth: 0 }}>
+                  <div>{d.label}</div>
+                  <div style={{ fontSize: 12.5, color: day.category ? "#a39d95" : "#6e6a65", marginTop: 2 }}>
+                    {day.category ? dayRoutineLabel(day) : "Sin rutina asignada"}
+                  </div>
+                </span>
+                <div
+                  style={{
+                    width: 30,
+                    height: 30,
+                    borderRadius: "50%",
+                    background: isToday ? "#ff7a54" : "#2a2824",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    flexShrink: 0,
+                  }}
+                >
+                  <ChevronRight size={15} color={isToday ? "#1a1512" : "#8a8580"} strokeWidth={2.5} />
+                </div>
+              </button>
+            </div>
           );
         })}
 
