@@ -2381,34 +2381,36 @@ export default function App() {
               </DashedButton>
             </div>
 
-            <div style={{ marginTop: 18 }}>
-              <button
-                onClick={() => { if (!completedDays.has(todayISO())) toggleCompletedDay(todayISO()); }}
-                style={{
-                  width: "100%",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  gap: 8,
-                  padding: "14px 18px",
-                  borderRadius: 999,
-                  border: "none",
-                  background: completedDays.has(todayISO()) ? accent.solid : "#232019",
-                  color: completedDays.has(todayISO()) ? accent.text : "#d7d2ca",
-                  fontSize: 15,
-                  fontWeight: 700,
-                  cursor: completedDays.has(todayISO()) ? "default" : "pointer",
-                }}
-              >
-                {completedDays.has(todayISO()) && <Check size={17} strokeWidth={3} />}
-                {completedDays.has(todayISO()) ? "Día marcado 🔥" : "Marcar día"}
-              </button>
-              {completedDays.has(todayISO()) && (
-                <div style={{ fontSize: 11.5, color: "#6e6a65", marginTop: 8, textAlign: "center" }}>
-                  ¿Te equivocaste? Desmárcalo desde el Calendario en "Mi rutina".
-                </div>
-              )}
-            </div>
+            {currentDayKey === todayDayKey() && (
+              <div style={{ marginTop: 18 }}>
+                <button
+                  onClick={() => { if (!completedDays.has(todayISO())) toggleCompletedDay(todayISO()); }}
+                  style={{
+                    width: "100%",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    gap: 8,
+                    padding: "14px 18px",
+                    borderRadius: 999,
+                    border: "none",
+                    background: completedDays.has(todayISO()) ? accent.solid : "#232019",
+                    color: completedDays.has(todayISO()) ? accent.text : "#d7d2ca",
+                    fontSize: 15,
+                    fontWeight: 700,
+                    cursor: completedDays.has(todayISO()) ? "default" : "pointer",
+                  }}
+                >
+                  {completedDays.has(todayISO()) && <Check size={17} strokeWidth={3} />}
+                  {completedDays.has(todayISO()) ? "Día marcado 🔥" : "Marcar día"}
+                </button>
+                {completedDays.has(todayISO()) && (
+                  <div style={{ fontSize: 11.5, color: "#6e6a65", marginTop: 8, textAlign: "center" }}>
+                    ¿Te equivocaste? Desmárcalo desde el Calendario en "Mi rutina".
+                  </div>
+                )}
+              </div>
+            )}
           </>
         )}
 
