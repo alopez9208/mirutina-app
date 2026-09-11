@@ -760,6 +760,15 @@ export default function App() {
     setSavedRoutinesMap((prev) => ({ ...prev, [id]: updated }));
   }
 
+  async function updateSavedRoutine(id) {
+    const existing = savedRoutinesMap[id];
+    if (!existing) return;
+    const updated = { ...existing, days: buildRoutineSnapshot() };
+    await setDoc(doc(db, "users", currentUser.uid, "savedRoutines", id), updated);
+    setSavedRoutinesMap((prev) => ({ ...prev, [id]: updated }));
+    flashSuccess("Rutina actualizada");
+  }
+
   async function deleteSavedRoutine(id) {
     await deleteDoc(doc(db, "users", currentUser.uid, "savedRoutines", id));
     setSavedRoutinesMap((prev) => {
@@ -1741,15 +1750,24 @@ export default function App() {
                     <Pencil size={14} />
                   </button>
                 </div>
-                <button
-                  onClick={() => activateSavedRoutine(openSavedId)}
-                  style={{ flexShrink: 0, fontSize: 12, fontWeight: 600, color: accent.text, background: accent.solid, border: "none", borderRadius: 999, padding: "8px 14px", cursor: "pointer" }}
-                >
-                  Activar
-                </button>
+                <div style={{ display: "flex", gap: 8, flexShrink: 0 }}>
+                  {openRoutine.source !== "importado" && (
+                    <button
+                      onClick={() => updateSavedRoutine(openSavedId)}
+                      style={{ fontSize: 12, fontWeight: 600, color: "#f2ede6", background: "#1f1e1c", border: "1px solid #33312e", borderRadius: 999, padding: "8px 14px", cursor: "pointer" }}
+                    >
+                      Actualizar
+                    </button>
+                  )}
+                  <button
+                    onClick={() => activateSavedRoutine(openSavedId)}
+                    style={{ fontSize: 12, fontWeight: 600, color: accent.text, background: accent.solid, border: "none", borderRadius: 999, padding: "8px 14px", cursor: "pointer" }}
+                  >
+                    Activar
+                  </button>
+                </div>
               </div>
-            )}
-            {DAYS.map((d) => {
+            )}            {DAYS.map((d) => {
               const snap = openRoutine.days[d.key] || { category: null, customLabel: null };
               const label = snap.category === "personalizada" ? snap.customLabel : categoryLabel(snap.category);
               return (
