@@ -1624,12 +1624,13 @@ export default function App() {
           const totals = {};
           DAYS.forEach((d) => {
             const day = getDay(d.key);
+            if (day.category === "descanso") return;
             (day.plan || []).forEach((p) => {
               const catKey = FIXED_EXERCISE_CATEGORY[p.exerciseId] || exercisesMap[p.exerciseId]?.category || "otro";
               totals[catKey] = (totals[catKey] || 0) + (Number(p.sets) || 0);
             });
           });
-          const rows = EXERCISE_CATEGORIES.filter((c) => totals[c.key]).map((c) => ({ key: c.key, label: c.label, total: totals[c.key] }));
+          const rows = EXERCISE_CATEGORIES.filter((c) => c.key !== "cardio" && c.key !== "otro" && totals[c.key]).map((c) => ({ key: c.key, label: c.label, total: totals[c.key] }));
           if (rows.length === 0) return null;
           return (
             <div style={{ marginTop: 18 }}>
@@ -1857,7 +1858,11 @@ export default function App() {
                 <div style={{ display: "flex", gap: 8, flexShrink: 0 }}>
                   {openRoutine.source !== "importado" && (
                     <button
-                      onClick={() => updateSavedRoutine(openSavedId)}
+                      onClick={() => {
+                        if (window.confirm(`¿Sobrescribir "${openRoutine.name}" con tu rutina actual? Esto reemplaza lo que tenías guardado ahí.`)) {
+                          updateSavedRoutine(openSavedId);
+                        }
+                      }}
                       style={{ fontSize: 12, fontWeight: 600, color: "#f2ede6", background: "#1f1e1c", border: "1px solid #33312e", borderRadius: 999, padding: "8px 14px", cursor: "pointer" }}
                     >
                       Actualizar
