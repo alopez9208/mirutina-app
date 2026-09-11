@@ -14,9 +14,22 @@ service cloud.firestore {
     match /users/{userId} {
       allow read, write: if request.auth != null && request.auth.uid == userId;
 
-      match /rutina/{dayId} {
+      // Cubre TODAS las subcolecciones bajo users/{userId}, sin importar
+      // el nombre: rutina, exercises, customRoutines, savedRoutines,
+      // completedDays, y cualquier otra que se agregue en el futuro.
+      match /{document=**} {
         allow read, write: if request.auth != null && request.auth.uid == userId;
       }
+    }
+
+    // Rutinas compartidas por código. Cualquier usuario autenticado puede
+    // leer una si tiene el código (no se pueden listar sin saberlo), y
+    // solo puede crear la que le pertenece a él mismo. No se editan ni
+    // borran una vez compartidas.
+    match /sharedRoutines/{code} {
+      allow read: if request.auth != null;
+      allow create: if request.auth != null && request.auth.uid == request.resource.data.ownerUid;
+      allow update, delete: if false;
     }
   }
 }
