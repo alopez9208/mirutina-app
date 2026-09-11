@@ -26,6 +26,9 @@ const ACCENTS = {
 };
 
 const ACCENT_STORAGE_KEY = "mirutina_accent";
+// Guarda qué día se está entrenando y qué ejercicios ya se marcaron, para
+// que no se pierda si recargas la página o bloqueas el celular a mitad de la rutina.
+const TRAINING_STORAGE_KEY = "mirutina_training";
 
 // Historial de cambios que se muestra en "Ver últimas actualizaciones".
 // Para agregar uno nuevo, súmalo arriba de la lista (el más reciente primero).
@@ -70,6 +73,10 @@ const CATEGORIES = [
   { key: "cuadriceps", label: "Cuádriceps", exercises: ["Sentadilla libre", "Sentadilla Hack", "Sentadilla Smith", "Prensa", "Extensión de piernas", "Sentadilla frontal", "Zancadas", "Búlgara"] },
   { key: "femorales", label: "Femorales", exercises: ["Peso muerto", "Curl femoral sentado", "Curl femoral acostado", "Curl femoral de pie"] },
   { key: "gluteos", label: "Glúteos", exercises: ["Hip Thrust", "Patada de glúteo en polea", "Adducción", "Abducción", "Sentadilla profunda", "Búlgara"] },
+  { key: "abdomen", label: "Abdomen", exercises: ["Crunch", "Elevación de piernas", "Plancha", "Abdominales en polea", "Rueda abdominal", "Crunch en máquina"] },
+  { key: "gemelos", label: "Gemelos", exercises: ["Elevación de talones de pie", "Elevación de talones sentado", "Elevación de talones en prensa"] },
+  { key: "antebrazo", label: "Antebrazo", exercises: ["Curl de muñeca", "Curl de muñeca inverso", "Farmer walk"] },
+  { key: "cardio", label: "Cardio", exercises: ["Cinta", "Bicicleta estática", "Elíptica", "Remo", "Escaladora", "Saltar la cuerda"] },
 ];
 
 // Igual que CATEGORIES pero con "Otro" al final, para clasificar ejercicios
@@ -513,8 +520,22 @@ export default function App() {
   const [pendingExerciseId, setPendingExerciseId] = useState(null);
   const [editExercise, setEditExercise] = useState(false);
   const [editRecordId, setEditRecordId] = useState(null);
-  const [trainingDayKey, setTrainingDayKey] = useState(null);
-  const [trainingCompleted, setTrainingCompleted] = useState(new Set());
+  const [trainingDayKey, setTrainingDayKey] = useState(() => {
+    try {
+      const raw = localStorage.getItem(TRAINING_STORAGE_KEY);
+      return raw ? JSON.parse(raw).dayKey || null : null;
+    } catch {
+      return null;
+    }
+  });
+  const [trainingCompleted, setTrainingCompleted] = useState(() => {
+    try {
+      const raw = localStorage.getItem(TRAINING_STORAGE_KEY);
+      return raw ? new Set(JSON.parse(raw).completed || []) : new Set();
+    } catch {
+      return new Set();
+    }
+  });
 
   const [savedRoutinesMap, setSavedRoutinesMap] = useState({});
   const [openSavedId, setOpenSavedId] = useState(null);
@@ -691,6 +712,9 @@ export default function App() {
     setCustomRoutinesMap({});
     setSavedRoutinesMap({});
     setLoginForm({ username: "", password: "" });
+    setTrainingDayKey(null);
+    setTrainingCompleted(new Set());
+    persistTraining(null, new Set());
     setScreen("login");
   }
 
@@ -1054,13 +1078,20 @@ export default function App() {
     });
   }
 
-  function toggleTraining() {
-    if (trainingDayKey === currentDayKey) {
-      setTrainingDayKey(null);
-    } else {
-      setTrainingDayKey(currentDayKey);
+  function persistTraining(dayKey, completedSet) {
+    try {
+      if (!dayKey) localStorage.removeItem(TRAINING_STORAGE_KEY);
+      else localStorage.setItem(TRAINING_STORAGE_KEY, JSON.stringify({ dayKey, completed: [...completedSet] }));
+    } catch {
+      // localStorage no disponible — no es crítico.
     }
+  }
+
+  function toggleTraining() {
+    const nextDayKey = trainingDayKey === currentDayKey ? null : currentDayKey;
+    setTrainingDayKey(nextDayKey);
     setTrainingCompleted(new Set());
+    persistTraining(nextDayKey, new Set());
   }
 
   function toggleExerciseDone(exerciseId) {
@@ -1068,6 +1099,7 @@ export default function App() {
       const next = new Set(prev);
       if (next.has(exerciseId)) next.delete(exerciseId);
       else next.add(exerciseId);
+      persistTraining(trainingDayKey, next);
       return next;
     });
   }
@@ -1078,7 +1110,13 @@ export default function App() {
   }
 
   function openNewRecord() {
-    setRecordForm({ fecha: todayISO(), peso: "", series: String(currentExercise.sets || ""), repeticiones: String(currentExercise.reps || "") });
+    const last = sortByFecha(currentExercise.records || [])[0];
+    setRecordForm({
+      fecha: todayISO(),
+      peso: last ? String(last.peso) : "",
+      series: String(currentExercise.sets || (last ? last.series : "") || ""),
+      repeticiones: String(currentExercise.reps || (last ? last.repeticiones : "") || ""),
+    });
     setEditRecordId(null);
     setError("");
     setScreen("addRecord");
@@ -2108,23 +2146,23 @@ export default function App() {
           Plan: {currentExercise.sets}x{currentExercise.reps} reps · editar
         </button>
 
-        <div style={{ display: "flex", gap: 8, marginBottom: 20 }}>
+        <div style={{ display: "flex", marginBottom: 20 }}>
           <button
             onClick={openCalc1RM}
             style={{
-              flex: 1,
-              display: "flex",
+              display: "inline-flex",
               alignItems: "center",
               justifyContent: "center",
               gap: 6,
-              padding: "11px 10px",
-              borderRadius: 14,
+              padding: "8px 14px",
+              borderRadius: 999,
               border: "1px solid #33312e",
               background: "#1f1e1c",
               color: "#f2ede6",
-              fontSize: 13.5,
+              fontSize: 13,
               fontWeight: 500,
               cursor: "pointer",
+              width: "auto",
             }}
           >
             <Calculator size={15} color={accent.solid} /> Calcular 1RM
@@ -2188,6 +2226,11 @@ export default function App() {
         {success && <SuccessOverlay message={success} />}
         {recordCelebration && <NewRecordOverlay {...recordCelebration} />}
         <TopBar title={editRecordId ? "Editar registro" : "Nuevo registro"} onBack={() => setScreen("exerciseDetail")} />
+        {!editRecordId && sortByFecha(currentExercise.records || [])[0] && (
+          <div style={{ fontSize: 12.5, color: "#8a8580", marginTop: -10, marginBottom: 14 }}>
+            Última vez: {sortByFecha(currentExercise.records || [])[0].peso} kg · ya lo dejé precargado, ajústalo si cambió.
+          </div>
+        )}
         <Field label="Fecha" type="date" value={recordForm.fecha} onChange={(e) => setRecordForm({ ...recordForm, fecha: e.target.value })} />
         <Field label="Peso (kg)" type="number" min="0" step="0.5" value={recordForm.peso} onChange={(e) => setRecordForm({ ...recordForm, peso: e.target.value })} placeholder="Ej. 80" />
         <Field label="Series" type="number" min="1" value={recordForm.series} onChange={(e) => setRecordForm({ ...recordForm, series: e.target.value })} placeholder="Ej. 3" />
