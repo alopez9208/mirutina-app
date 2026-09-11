@@ -98,6 +98,16 @@ function slugify(str) {
     .replace(/(^-|-$)/g, "");
 }
 
+// Mapa inverso: de qué categoría es cada ejercicio "de catálogo" (fx-...),
+// para poder sumar series por categoría real del ejercicio, no por la
+// categoría del día (un día de Pecho puede tener ejercicios de Tríceps).
+const FIXED_EXERCISE_CATEGORY = {};
+CATEGORIES.forEach((cat) => {
+  cat.exercises.forEach((name) => {
+    FIXED_EXERCISE_CATEGORY["fx-" + slugify(name)] = cat.key;
+  });
+});
+
 function categoryLabel(key) {
   if (key === "descanso") return "Descanso";
   if (key === "personalizada") return "Personalizada";
@@ -1614,12 +1624,12 @@ export default function App() {
           const totals = {};
           DAYS.forEach((d) => {
             const day = getDay(d.key);
-            if (!day.category || day.category === "descanso" || day.category === "personalizada") return;
-            const daySets = (day.plan || []).reduce((sum, p) => sum + (Number(p.sets) || 0), 0);
-            if (daySets === 0) return;
-            totals[day.category] = (totals[day.category] || 0) + daySets;
+            (day.plan || []).forEach((p) => {
+              const catKey = FIXED_EXERCISE_CATEGORY[p.exerciseId] || exercisesMap[p.exerciseId]?.category || "otro";
+              totals[catKey] = (totals[catKey] || 0) + (Number(p.sets) || 0);
+            });
           });
-          const rows = CATEGORIES.filter((c) => totals[c.key]).map((c) => ({ key: c.key, label: c.label, total: totals[c.key] }));
+          const rows = EXERCISE_CATEGORIES.filter((c) => totals[c.key]).map((c) => ({ key: c.key, label: c.label, total: totals[c.key] }));
           if (rows.length === 0) return null;
           return (
             <div style={{ marginTop: 18 }}>
