@@ -40,7 +40,7 @@ const TRAINING_STORAGE_KEY = "mirutina_training";
 const UPDATES = [
   { date: "11 sept 2026", text: "Nuevo botón Resumen en tu rutina: te suma cuántas series haces a la semana por categoría." },
   { date: "10 sept 2026", text: "Nuevo temporizador de descanso y calculadora de 1RM dentro de cada ejercicio." },
-  { date: "10 sept 2026", text: "Ahora puedes cambiar el color de toda la app desde el lápiz de arriba." },
+  { date: "10 sept 2026", text: "Ahora puedes cambiar el color de toda la app y el nombre que se ve en el inicio, desde el lápiz de arriba." },
   { date: "3 sept 2026", text: "Se puede compartir tu rutina con un código para que un amigo la importe." },
   { date: "28 ago 2026", text: "Los ejercicios personalizados ahora se marcan con una estrella." },
 ];
@@ -511,6 +511,8 @@ export default function App() {
   const [recordCelebration, setRecordCelebration] = useState(null); // { exerciseName, before, after }
   const [showPw, setShowPw] = useState(false);
   const [accentPickerOpen, setAccentPickerOpen] = useState(false);
+  const [editingDisplayName, setEditingDisplayName] = useState(false);
+  const [displayNameValue, setDisplayNameValue] = useState("");
   const [updatesOpen, setUpdatesOpen] = useState(false);
   const [allUpdatesOpen, setAllUpdatesOpen] = useState(false);
 
@@ -578,7 +580,7 @@ export default function App() {
       if (fbUser) {
         const profileSnap = await getDoc(doc(db, "users", fbUser.uid));
         const profile = profileSnap.exists() ? profileSnap.data() : { username: fbUser.email };
-        const user = { uid: fbUser.uid, email: fbUser.email, username: profile.username, accentColor: profile.accentColor || "coral" };
+        const user = { uid: fbUser.uid, email: fbUser.email, username: profile.username, accentColor: profile.accentColor || "coral", displayName: profile.displayName || profile.username };
         setCurrentUser(user);
         await loadRutina(user);
         setScreen((s) => (s === "login" || s === "register" ? "home" : s));
@@ -761,6 +763,13 @@ export default function App() {
       // localStorage no disponible (modo privado, etc.) — no es crítico.
     }
     await setDoc(doc(db, "users", currentUser.uid), { accentColor: key }, { merge: true });
+  }
+
+  async function updateDisplayName(name) {
+    const trimmed = name.trim();
+    if (!trimmed) return;
+    setCurrentUser((prev) => ({ ...prev, displayName: trimmed }));
+    await setDoc(doc(db, "users", currentUser.uid), { displayName: trimmed }, { merge: true });
   }
 
   async function saveCustomRoutine(id, data) {
@@ -1368,7 +1377,13 @@ export default function App() {
         {success && <SuccessOverlay message={success} />}
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8, position: "relative" }}>
           <button
-            onClick={() => setAccentPickerOpen((v) => !v)}
+            onClick={() => {
+              setAccentPickerOpen((v) => {
+                const next = !v;
+                if (next) setDisplayNameValue(currentUser?.displayName || currentUser?.username || "");
+                return next;
+              });
+            }}
             aria-label="Cambiar color de la app"
             style={{
               width: 30,
@@ -1401,14 +1416,45 @@ export default function App() {
                 borderRadius: 16,
                 padding: 10,
                 display: "flex",
-                flexWrap: "wrap",
-                width: 168,
-                gap: 8,
+                flexDirection: "column",
+                gap: 10,
+                width: 190,
                 zIndex: 10,
                 boxShadow: "0 8px 20px rgba(0,0,0,0.35)",
               }}
             >
-              {Object.entries(ACCENTS).map(([key, opt]) => (
+              <div>
+                <div style={{ fontSize: 11, color: "#8a8580", marginBottom: 4 }}>Nombre para mostrar</div>
+                <div style={{ display: "flex", gap: 6 }}>
+                  <input
+                    value={displayNameValue}
+                    onChange={(e) => setDisplayNameValue(e.target.value)}
+                    maxLength={24}
+                    style={{
+                      flex: 1,
+                      minWidth: 0,
+                      background: "#141311",
+                      border: "1px solid #33312e",
+                      borderRadius: 10,
+                      color: "#f2ede6",
+                      fontSize: 13,
+                      padding: "6px 8px",
+                    }}
+                  />
+                  <button
+                    onClick={() => {
+                      updateDisplayName(displayNameValue);
+                      setAccentPickerOpen(false);
+                    }}
+                    style={{ flexShrink: 0, border: "none", borderRadius: 10, background: accent.solid, color: accent.text, fontSize: 12, fontWeight: 600, padding: "0 10px", cursor: "pointer" }}
+                  >
+                    Guardar
+                  </button>
+                </div>
+              </div>
+
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+                {Object.entries(ACCENTS).map(([key, opt]) => (
                 <button
                   key={key}
                   onClick={() => {
@@ -1437,6 +1483,7 @@ export default function App() {
                   />
                 </button>
               ))}
+              </div>
             </div>
           )}
         </div>
@@ -1490,7 +1537,7 @@ export default function App() {
               </div>
               <div style={{ fontSize: 13.5, color: accent.text, opacity: 0.75, fontWeight: 600 }}>Hola</div>
             </div>
-            <div style={{ fontSize: 26, fontWeight: 800, color: accent.text, lineHeight: 1.1 }}>{currentUser?.username || ""}</div>
+            <div style={{ fontSize: 26, fontWeight: 800, color: accent.text, lineHeight: 1.1 }}>{currentUser?.displayName || currentUser?.username || ""}</div>
             <div style={{ fontSize: 13.5, color: accent.text, opacity: 0.65, marginTop: 4 }}>MiRutina App</div>
           </div>
         </div>
