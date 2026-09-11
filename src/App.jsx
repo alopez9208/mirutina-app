@@ -38,6 +38,7 @@ const TRAINING_STORAGE_KEY = "mirutina_training";
 // Historial de cambios que se muestra en "Ver últimas actualizaciones".
 // Para agregar uno nuevo, súmalo arriba de la lista (el más reciente primero).
 const UPDATES = [
+  { date: "11 sept 2026", text: "Nuevo botón Resumen en tu rutina: te suma cuántas series haces a la semana por categoría." },
   { date: "10 sept 2026", text: "Nuevo temporizador de descanso y calculadora de 1RM dentro de cada ejercicio." },
   { date: "10 sept 2026", text: "Ahora puedes cambiar el color de toda la app desde el lápiz de arriba." },
   { date: "3 sept 2026", text: "Se puede compartir tu rutina con un código para que un amigo la importe." },
@@ -511,6 +512,7 @@ export default function App() {
   const [showPw, setShowPw] = useState(false);
   const [accentPickerOpen, setAccentPickerOpen] = useState(false);
   const [updatesOpen, setUpdatesOpen] = useState(false);
+  const [allUpdatesOpen, setAllUpdatesOpen] = useState(false);
 
   const [restTimerOpen, setRestTimerOpen] = useState(false);
   const [restPresetIndex, setRestPresetIndex] = useState(1);
@@ -1550,7 +1552,7 @@ export default function App() {
 
         {updatesOpen && (
           <div style={{ marginTop: 8, border: "1px solid #2a2824", borderRadius: 16, overflow: "hidden" }}>
-            {UPDATES.map((u, i) => (
+            {UPDATES.slice(0, 5).map((u, i) => (
               <div key={i} style={{ padding: "12px 14px", borderTop: i === 0 ? "none" : "1px solid #232019", display: "flex", gap: 10 }}>
                 <div style={{ width: 6, height: 6, borderRadius: "50%", background: accent.solid, marginTop: 6, flexShrink: 0 }} />
                 <div>
@@ -1559,6 +1561,57 @@ export default function App() {
                 </div>
               </div>
             ))}
+            {UPDATES.length > 5 && (
+              <button
+                onClick={() => setAllUpdatesOpen(true)}
+                style={{
+                  width: "100%",
+                  padding: "11px 14px",
+                  border: "none",
+                  borderTop: "1px solid #232019",
+                  background: "none",
+                  color: accent.solid,
+                  fontSize: 12.5,
+                  fontWeight: 600,
+                  cursor: "pointer",
+                }}
+              >
+                Ver todas ({UPDATES.length})
+              </button>
+            )}
+          </div>
+        )}
+
+        {allUpdatesOpen && (
+          <div
+            style={{
+              position: "absolute",
+              inset: 0,
+              background: "rgba(15,14,13,0.96)",
+              zIndex: 50,
+              display: "flex",
+              flexDirection: "column",
+              padding: "28px 20px 40px",
+              boxSizing: "border-box",
+            }}
+          >
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 18, flexShrink: 0 }}>
+              <span style={{ fontSize: 16, fontWeight: 600 }}>Todas las actualizaciones</span>
+              <button onClick={() => setAllUpdatesOpen(false)} style={{ background: "none", border: "none", color: "#8a8580", cursor: "pointer" }}>
+                <X size={22} />
+              </button>
+            </div>
+            <div style={{ overflowY: "auto", border: "1px solid #2a2824", borderRadius: 16 }}>
+              {UPDATES.map((u, i) => (
+                <div key={i} style={{ padding: "12px 14px", borderTop: i === 0 ? "none" : "1px solid #232019", display: "flex", gap: 10 }}>
+                  <div style={{ width: 6, height: 6, borderRadius: "50%", background: accent.solid, marginTop: 6, flexShrink: 0 }} />
+                  <div>
+                    <div style={{ fontSize: 11, color: "#6e6a65", marginBottom: 2 }}>{u.date}</div>
+                    <div style={{ fontSize: 13, color: "#d7d2ca", lineHeight: 1.4 }}>{u.text}</div>
+                  </div>
+                </div>
+              ))}
+            </div>
           </div>
         )}
       </div>
