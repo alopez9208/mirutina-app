@@ -2321,7 +2321,7 @@ export default function App() {
           <button
             onClick={openCalc1RM}
             style={{
-              flex: 1,
+              flex: "0 0 auto",
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
