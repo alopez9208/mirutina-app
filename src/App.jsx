@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from "react";
-import { Dumbbell, Plus, ChevronRight, ArrowLeft, Check, X, Eye, EyeOff, Trophy, Trash2, Star, Pencil, Share2, FolderClock, Download, Save, Copy, Sparkles, ChevronDown, ChevronUp, Timer, Play, Pause, RotateCcw, Calculator } from "lucide-react";
+import { Dumbbell, Plus, ChevronRight, ChevronLeft, ArrowLeft, Check, X, Eye, EyeOff, Trophy, Trash2, Star, Pencil, Share2, FolderClock, Download, Save, Copy, Sparkles, ChevronDown, ChevronUp, Timer, Play, Pause, RotateCcw, Calculator, Calendar as CalendarIcon } from "lucide-react";
 import { auth, db } from "./firebase";
 import {
   createUserWithEmailAndPassword,
@@ -38,6 +38,7 @@ const TRAINING_STORAGE_KEY = "mirutina_training";
 // Historial de cambios que se muestra en "Ver últimas actualizaciones".
 // Para agregar uno nuevo, súmalo arriba de la lista (el más reciente primero).
 const UPDATES = [
+  { date: "11 sept 2026", text: "Nuevo calendario en tu rutina: marca los días que entrenaste, revisa meses anteriores y usa el botón 'Marcar día' para registrarlo con un toque." },
   { date: "11 sept 2026", text: "Nuevo botón Resumen en tu rutina: te suma cuántas series haces a la semana por categoría." },
   { date: "10 sept 2026", text: "Nuevo temporizador de descanso y calculadora de 1RM dentro de cada ejercicio." },
   { date: "10 sept 2026", text: "Ahora puedes cambiar el color de toda la app y el nombre que se ve en el inicio, desde el lápiz de arriba." },
@@ -58,6 +59,17 @@ function todayISO() {
 function todayDayKey() {
   const map = ["domingo", "lunes", "martes", "miercoles", "jueves", "viernes", "sabado"];
   return map[new Date().getDay()];
+}
+
+// ---------- calendario de días completados ----------
+const MESES = ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"];
+const DIAS_CORTOS = ["L", "M", "M", "J", "V", "S", "D"];
+
+function pad2(n) {
+  return n.toString().padStart(2, "0");
+}
+function fechaKey(y, m, d) {
+  return `${y}-${pad2(m + 1)}-${pad2(d)}`;
 }
 
 const DAYS = [
@@ -318,6 +330,116 @@ function DashedButton({ children, onClick }) {
   );
 }
 
+// Calendario desplegable de días completados. Maneja su propio mes en pantalla;
+// completedDays (Set de "YYYY-MM-DD") y onToggleDay vienen de <App>.
+function RoutineCalendar({ completedDays, onToggleDay }) {
+  const now = new Date();
+  const [viewYear, setViewYear] = useState(now.getFullYear());
+  const [viewMonth, setViewMonth] = useState(now.getMonth());
+  const today = todayISO();
+  const isCurrentMonth = viewYear === now.getFullYear() && viewMonth === now.getMonth();
+
+  const goPrev = () => {
+    if (viewMonth === 0) {
+      setViewMonth(11);
+      setViewYear((y) => y - 1);
+    } else setViewMonth((m) => m - 1);
+  };
+  const goNext = () => {
+    if (isCurrentMonth) return;
+    if (viewMonth === 11) {
+      setViewMonth(0);
+      setViewYear((y) => y + 1);
+    } else setViewMonth((m) => m + 1);
+  };
+
+  const firstDay = new Date(viewYear, viewMonth, 1);
+  const startOffset = (firstDay.getDay() + 6) % 7; // lunes=0 ... domingo=6
+  const daysInMonth = new Date(viewYear, viewMonth + 1, 0).getDate();
+  const cells = [];
+  for (let i = 0; i < startOffset; i++) cells.push(null);
+  for (let d = 1; d <= daysInMonth; d++) cells.push(d);
+
+  return (
+    <div style={{ marginTop: 10, padding: "16px 14px", borderRadius: 18, border: "1px solid #2a2824", background: "#1a1917" }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14 }}>
+        <button
+          onClick={goPrev}
+          style={{ width: 30, height: 30, borderRadius: "50%", border: "1px solid #33312e", background: "#1f1e1c", color: "#f2ede6", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}
+        >
+          <ChevronLeft size={16} />
+        </button>
+        <div style={{ fontSize: 14.5, fontWeight: 700, color: "#f2ede6" }}>
+          {MESES[viewMonth]} {viewYear}
+        </div>
+        <button
+          onClick={goNext}
+          disabled={isCurrentMonth}
+          style={{
+            width: 30,
+            height: 30,
+            borderRadius: "50%",
+            border: "1px solid #33312e",
+            background: isCurrentMonth ? "#181715" : "#1f1e1c",
+            color: isCurrentMonth ? "#4a463f" : "#f2ede6",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            cursor: isCurrentMonth ? "default" : "pointer",
+          }}
+        >
+          <ChevronRight size={16} />
+        </button>
+      </div>
+
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", gap: 4, marginBottom: 6 }}>
+        {DIAS_CORTOS.map((d, i) => (
+          <div key={i} style={{ textAlign: "center", fontSize: 11, color: "#6e6a65", fontWeight: 600 }}>
+            {d}
+          </div>
+        ))}
+      </div>
+
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", gap: 4 }}>
+        {cells.map((d, i) => {
+          if (d === null) return <div key={i} />;
+          const key = fechaKey(viewYear, viewMonth, d);
+          const isFuture = key > today;
+          const isToday = key === today;
+          const isDone = completedDays.has(key);
+          return (
+            <button
+              key={i}
+              disabled={isFuture}
+              onClick={() => onToggleDay(key)}
+              style={{
+                aspectRatio: "1 / 1",
+                borderRadius: 10,
+                border: isToday && !isDone ? `1.5px solid ${CURRENT_ACCENT.solid}` : "1px solid transparent",
+                background: isDone ? CURRENT_ACCENT.solid : "transparent",
+                color: isFuture ? "#4a463f" : isDone ? CURRENT_ACCENT.text : "#d7d2ca",
+                fontSize: 13,
+                fontWeight: isDone ? 700 : 500,
+                cursor: isFuture ? "default" : "pointer",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+              }}
+            >
+              {d}
+            </button>
+          );
+        })}
+      </div>
+
+      <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 14, fontSize: 11.5, color: "#8a8580" }}>
+        <div style={{ width: 10, height: 10, borderRadius: 4, background: CURRENT_ACCENT.solid }} />
+        Toca cualquier día pasado o de hoy para marcarlo o desmarcarlo
+      </div>
+    </div>
+  );
+}
+
 function TopBar({ title, onBack }) {
   return (
     <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 22, minHeight: 30 }}>
@@ -559,6 +681,8 @@ export default function App() {
   const [savedRoutinesMap, setSavedRoutinesMap] = useState({});
   const [openSavedId, setOpenSavedId] = useState(null);
   const [showWeekSummary, setShowWeekSummary] = useState(false);
+  const [showCalendar, setShowCalendar] = useState(false);
+  const [completedDays, setCompletedDays] = useState(new Set());
   const [renamingSavedId, setRenamingSavedId] = useState(null);
   const [renameSavedValue, setRenameSavedValue] = useState("");
   const [savingCurrent, setSavingCurrent] = useState(false);
@@ -636,11 +760,12 @@ export default function App() {
   }
 
   async function loadRutina(user) {
-    const [rutinaSnap, exercisesSnap, routinesSnap, savedRoutinesSnap] = await Promise.all([
+    const [rutinaSnap, exercisesSnap, routinesSnap, savedRoutinesSnap, completedDaysSnap] = await Promise.all([
       getDocs(collection(db, "users", user.uid, "rutina")),
       getDocs(collection(db, "users", user.uid, "exercises")),
       getDocs(collection(db, "users", user.uid, "customRoutines")),
       getDocs(collection(db, "users", user.uid, "savedRoutines")),
+      getDocs(collection(db, "users", user.uid, "completedDays")),
     ]);
     const data = {};
     rutinaSnap.docs.forEach((d) => {
@@ -662,6 +787,9 @@ export default function App() {
       savedData[d.id] = d.data();
     });
     setSavedRoutinesMap(savedData);
+    const completedSet = new Set();
+    completedDaysSnap.docs.forEach((d) => completedSet.add(d.id));
+    setCompletedDays(completedSet);
   }
 
   // ---------- auth ----------
@@ -747,6 +875,34 @@ export default function App() {
     await setDoc(doc(db, "users", currentUser.uid, "rutina", dayKey), dayData);
     setRutina((prev) => ({ ...prev, [dayKey]: dayData }));
     return dayData;
+  }
+
+  // Marca/desmarca una fecha ("YYYY-MM-DD") como día completado. Se guarda por
+  // fecha real (no por nombre del día), así que "Marcar día" siempre apunta a
+  // la fecha de hoy y queda disponible de nuevo al día siguiente.
+  async function toggleCompletedDay(dateKey) {
+    const wasDone = completedDays.has(dateKey);
+    setCompletedDays((prev) => {
+      const next = new Set(prev);
+      if (wasDone) next.delete(dateKey);
+      else next.add(dateKey);
+      return next;
+    });
+    try {
+      if (wasDone) {
+        await deleteDoc(doc(db, "users", currentUser.uid, "completedDays", dateKey));
+      } else {
+        await setDoc(doc(db, "users", currentUser.uid, "completedDays", dateKey), { done: true });
+      }
+    } catch (e) {
+      // si falla el guardado, revertimos el estado local para no mentir en pantalla
+      setCompletedDays((prev) => {
+        const next = new Set(prev);
+        if (wasDone) next.add(dateKey);
+        else next.delete(dateKey);
+        return next;
+      });
+    }
   }
 
   async function saveExercise(exerciseId, exData) {
@@ -1731,30 +1887,52 @@ export default function App() {
             });
           });
           const rows = EXERCISE_CATEGORIES.filter((c) => c.key !== "cardio" && c.key !== "otro" && totals[c.key]).map((c) => ({ key: c.key, label: c.label, total: totals[c.key] }));
-          if (rows.length === 0) return null;
           return (
             <div style={{ marginTop: 18 }}>
-              <button
-                onClick={() => setShowWeekSummary((v) => !v)}
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 6,
-                  margin: "0 auto",
-                  padding: "7px 14px",
-                  borderRadius: 999,
-                  border: "1px solid #33312e",
-                  background: "none",
-                  color: "#a39d95",
-                  fontSize: 12.5,
-                  fontWeight: 500,
-                  cursor: "pointer",
-                }}
-              >
-                {showWeekSummary ? "Ocultar resumen" : "Resumen"}
-                <ChevronDown size={13} style={{ transform: showWeekSummary ? "rotate(180deg)" : "none" }} />
-              </button>
-              {showWeekSummary && (
+              <div style={{ display: "flex", gap: 8, justifyContent: "center" }}>
+                {rows.length > 0 && (
+                  <button
+                    onClick={() => setShowWeekSummary((v) => !v)}
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 6,
+                      padding: "7px 14px",
+                      borderRadius: 999,
+                      border: "1px solid #33312e",
+                      background: "none",
+                      color: "#a39d95",
+                      fontSize: 12.5,
+                      fontWeight: 500,
+                      cursor: "pointer",
+                    }}
+                  >
+                    {showWeekSummary ? "Ocultar resumen" : "Resumen"}
+                    <ChevronDown size={13} style={{ transform: showWeekSummary ? "rotate(180deg)" : "none" }} />
+                  </button>
+                )}
+                <button
+                  onClick={() => setShowCalendar((v) => !v)}
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 6,
+                    padding: "7px 14px",
+                    borderRadius: 999,
+                    border: `1px solid ${showCalendar ? accent.solid : "#33312e"}`,
+                    background: "none",
+                    color: showCalendar ? accent.solid : "#a39d95",
+                    fontSize: 12.5,
+                    fontWeight: 500,
+                    cursor: "pointer",
+                  }}
+                >
+                  <CalendarIcon size={13} />
+                  Calendario
+                  <ChevronDown size={13} style={{ transform: showCalendar ? "rotate(180deg)" : "none" }} />
+                </button>
+              </div>
+              {showWeekSummary && rows.length > 0 && (
                 <div style={{ marginTop: 10, padding: "14px 16px", borderRadius: 16, border: "1px solid #2a2824", background: "#1a1917" }}>
                   <div style={{ fontSize: 12, color: "#8a8580", fontWeight: 700, letterSpacing: 0.5, marginBottom: 10 }}>RESUMEN DE LA SEMANA</div>
                   {rows.map((r) => (
@@ -1765,6 +1943,7 @@ export default function App() {
                   ))}
                 </div>
               )}
+              {showCalendar && <RoutineCalendar completedDays={completedDays} onToggleDay={toggleCompletedDay} />}
             </div>
           );
         })()}
@@ -2200,6 +2379,35 @@ export default function App() {
               <DashedButton onClick={openAddExercise}>
                 <Plus size={17} /> Agregar ejercicio
               </DashedButton>
+            </div>
+
+            <div style={{ marginTop: 18 }}>
+              <button
+                onClick={() => { if (!completedDays.has(todayISO())) toggleCompletedDay(todayISO()); }}
+                style={{
+                  width: "100%",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  gap: 8,
+                  padding: "14px 18px",
+                  borderRadius: 999,
+                  border: "none",
+                  background: completedDays.has(todayISO()) ? accent.solid : "#232019",
+                  color: completedDays.has(todayISO()) ? accent.text : "#d7d2ca",
+                  fontSize: 15,
+                  fontWeight: 700,
+                  cursor: completedDays.has(todayISO()) ? "default" : "pointer",
+                }}
+              >
+                {completedDays.has(todayISO()) && <Check size={17} strokeWidth={3} />}
+                {completedDays.has(todayISO()) ? "Día marcado 🔥" : "Marcar día"}
+              </button>
+              {completedDays.has(todayISO()) && (
+                <div style={{ fontSize: 11.5, color: "#6e6a65", marginTop: 8, textAlign: "center" }}>
+                  ¿Te equivocaste? Desmárcalo desde el Calendario en "Mi rutina".
+                </div>
+              )}
             </div>
           </>
         )}
