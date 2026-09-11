@@ -23,6 +23,11 @@ const ACCENTS = {
   verde: { name: "Verde", from: "#3ecf8e", to: "#1f9d68", solid: "#3ecf8e", text: "#07241a" },
   rosa: { name: "Rosa", from: "#ff6fa5", to: "#d93d74", solid: "#ff6fa5", text: "#2a0916" },
   purpura: { name: "Púrpura", from: "#a480ff", to: "#7248d6", solid: "#a480ff", text: "#160b2e" },
+  amarillo: { name: "Amarillo", from: "#ffd166", to: "#e0a92e", solid: "#ffd166", text: "#2e2100" },
+  turquesa: { name: "Turquesa", from: "#2dd4bf", to: "#0f9488", solid: "#2dd4bf", text: "#04211d" },
+  indigo: { name: "Índigo", from: "#818cf8", to: "#4f46e5", solid: "#818cf8", text: "#141a3d" },
+  lima: { name: "Lima", from: "#a3e635", to: "#79ba13", solid: "#a3e635", text: "#1c2a04" },
+  grafito: { name: "Grafito", from: "#94a3b8", to: "#64748b", solid: "#94a3b8", text: "#12181f" },
 };
 
 const ACCENT_STORAGE_KEY = "mirutina_accent";
@@ -1383,6 +1388,8 @@ export default function App() {
                 borderRadius: 16,
                 padding: 10,
                 display: "flex",
+                flexWrap: "wrap",
+                width: 168,
                 gap: 8,
                 zIndex: 10,
                 boxShadow: "0 8px 20px rgba(0,0,0,0.35)",
@@ -2146,23 +2153,23 @@ export default function App() {
           Plan: {currentExercise.sets}x{currentExercise.reps} reps · editar
         </button>
 
-        <div style={{ display: "flex", marginBottom: 20 }}>
+        <div style={{ display: "flex", gap: 8, marginBottom: 20 }}>
           <button
             onClick={openCalc1RM}
             style={{
-              display: "inline-flex",
+              flex: 1,
+              display: "flex",
               alignItems: "center",
               justifyContent: "center",
               gap: 6,
-              padding: "8px 14px",
-              borderRadius: 999,
+              padding: "11px 10px",
+              borderRadius: 14,
               border: "1px solid #33312e",
               background: "#1f1e1c",
               color: "#f2ede6",
-              fontSize: 13,
+              fontSize: 13.5,
               fontWeight: 500,
               cursor: "pointer",
-              width: "auto",
             }}
           >
             <Calculator size={15} color={accent.solid} /> Calcular 1RM
