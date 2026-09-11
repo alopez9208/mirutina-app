@@ -36,7 +36,7 @@ const UPDATES = [
   { date: "28 ago 2026", text: "Los ejercicios personalizados ahora se marcan con una estrella." },
 ];
 
-// Color activo del usuario. Se actualiza al inicioa de cada render de <App>
+// Color activo del usuario. Se actualiza al inicio de cada render de <App>
 // para que PrimaryButton, DashedButton y PillButton (definidos abajo, fuera
 // de App) puedan pintarse con el color elegido sin recibirlo por props.
 let CURRENT_ACCENT = ACCENTS.coral;
@@ -71,6 +71,11 @@ const CATEGORIES = [
   { key: "femorales", label: "Femorales", exercises: ["Peso muerto", "Curl femoral sentado", "Curl femoral acostado", "Curl femoral de pie"] },
   { key: "gluteos", label: "Glúteos", exercises: ["Hip Thrust", "Patada de glúteo en polea", "Adducción", "Abducción", "Sentadilla profunda", "Búlgara"] },
 ];
+
+// Igual que CATEGORIES pero con "Otro" al final, para clasificar ejercicios
+// personalizados que no encajan en ningún grupo muscular. Solo se usa para
+// clasificar ejercicios, no para elegir la rutina de un día.
+const EXERCISE_CATEGORIES = [...CATEGORIES, { key: "otro", label: "Otro", exercises: [] }];
 
 function slugify(str) {
   return str
@@ -125,8 +130,8 @@ function PillButton({ children, onClick, subtitle, compact, muted, starred, onEd
         gap: 12,
         padding: compact ? "11px 16px" : "16px 18px",
         borderRadius: compact ? 16 : 999,
-        border: checked ? "1px solid #3fa863" : highlighted ? `1.5px solid ${CURRENT_ACCENT.solid}` : "1px solid #33312e",
-        background: checked ? "#15271c" : highlighted ? "#2a1d15" : "#1f1e1c",
+        border: checked ? `1px solid ${CURRENT_ACCENT.solid}` : highlighted ? `1.5px solid ${CURRENT_ACCENT.solid}` : "1px solid #33312e",
+        background: checked ? `${CURRENT_ACCENT.solid}26` : highlighted ? "#2a1d15" : "#1f1e1c",
         color: "#f2ede6",
         fontSize: 16,
         fontWeight: 500,
@@ -158,8 +163,8 @@ function PillButton({ children, onClick, subtitle, compact, muted, starred, onEd
             flexShrink: 0,
             borderRadius: "50%",
             border: checked ? "none" : "1.5px solid #4a4640",
-            background: checked ? "#22c55e" : "transparent",
-            color: checked ? "#0f1a12" : "#5c5851",
+            background: checked ? CURRENT_ACCENT.solid : "transparent",
+            color: checked ? CURRENT_ACCENT.text : "#5c5851",
             cursor: "pointer",
             display: "flex",
             alignItems: "center",
@@ -1992,19 +1997,18 @@ export default function App() {
   if (screen === "addExercise" && currentDayKey) {
     const day = getDay(currentDayKey);
     const alreadyIds = new Set((day.plan || []).map((p) => p.exerciseId));
-    const sections = CATEGORIES.map((cat) => {
+    const sections = EXERCISE_CATEGORIES.map((cat) => {
       const fixed = cat.exercises.filter((name) => !alreadyIds.has("fx-" + slugify(name))).map((name) => ({ id: "fx-" + slugify(name), name, custom: false }));
       const customs = Object.entries(exercisesMap)
-        .filter(([id, ex]) => ex.custom && ex.category === cat.key && !alreadyIds.has(id))
+        .filter(([id, ex]) => ex.custom && !alreadyIds.has(id) && (ex.category === cat.key || (cat.key === "otro" && !ex.category)))
         .map(([id, ex]) => ({ id, name: ex.name, custom: true }));
       return { key: cat.key, label: cat.label, items: [...fixed, ...customs] };
     }).filter((s) => s.items.length > 0);
-    const orphanCustoms = Object.entries(exercisesMap).filter(([id, ex]) => ex.custom && !ex.category && !alreadyIds.has(id));
 
     return (
       <div style={shell}>
         <TopBar title="Agregar ejercicio" onBack={() => setScreen("dayDetail")} />
-        {sections.length === 0 && orphanCustoms.length === 0 && (
+        {sections.length === 0 && (
           <div style={{ color: "#8a8580", fontSize: 14, marginBottom: 16 }}>Ya agregaste todos los ejercicios disponibles.</div>
         )}
         {sections.map((s) => (
@@ -2023,23 +2027,6 @@ export default function App() {
             ))}
           </div>
         ))}
-
-        {orphanCustoms.length > 0 && (
-          <div style={{ marginBottom: 18 }}>
-            <div style={{ fontSize: 12, color: "#8a8580", fontWeight: 700, letterSpacing: 0.4, marginBottom: 8 }}>OTROS PERSONALIZADOS</div>
-            {orphanCustoms.map(([id, ex]) => (
-              <PillButton
-                key={id}
-                compact
-                starred
-                onClick={() => openExerciseForm(ex.name, id)}
-                onDelete={() => deleteCustomExercise(id, ex.name)}
-              >
-                {ex.name}
-              </PillButton>
-            ))}
-          </div>
-        )}
 
         <DashedButton onClick={openCustomExerciseForm}>
           <Plus size={17} /> Ejercicio personalizado nuevo
@@ -2061,7 +2048,7 @@ export default function App() {
               label="Categoría"
               value={exerciseForm.categoria}
               onChange={(e) => setExerciseForm({ ...exerciseForm, categoria: e.target.value })}
-              options={CATEGORIES.map((c) => ({ value: c.key, label: c.label }))}
+              options={EXERCISE_CATEGORIES.map((c) => ({ value: c.key, label: c.label }))}
             />
           </>
         )}
