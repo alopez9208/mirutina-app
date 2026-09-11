@@ -544,6 +544,7 @@ export default function App() {
 
   const [savedRoutinesMap, setSavedRoutinesMap] = useState({});
   const [openSavedId, setOpenSavedId] = useState(null);
+  const [showWeekSummary, setShowWeekSummary] = useState(false);
   const [renamingSavedId, setRenamingSavedId] = useState(null);
   const [renameSavedValue, setRenameSavedValue] = useState("");
   const [savingCurrent, setSavingCurrent] = useState(false);
@@ -1609,6 +1610,54 @@ export default function App() {
           );
         })}
 
+        {(() => {
+          const totals = {};
+          DAYS.forEach((d) => {
+            const day = getDay(d.key);
+            if (!day.category || day.category === "descanso" || day.category === "personalizada") return;
+            const daySets = (day.plan || []).reduce((sum, p) => sum + (Number(p.sets) || 0), 0);
+            if (daySets === 0) return;
+            totals[day.category] = (totals[day.category] || 0) + daySets;
+          });
+          const rows = CATEGORIES.filter((c) => totals[c.key]).map((c) => ({ key: c.key, label: c.label, total: totals[c.key] }));
+          if (rows.length === 0) return null;
+          return (
+            <div style={{ marginTop: 18 }}>
+              <button
+                onClick={() => setShowWeekSummary((v) => !v)}
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 6,
+                  margin: "0 auto",
+                  padding: "7px 14px",
+                  borderRadius: 999,
+                  border: "1px solid #33312e",
+                  background: "none",
+                  color: "#a39d95",
+                  fontSize: 12.5,
+                  fontWeight: 500,
+                  cursor: "pointer",
+                }}
+              >
+                {showWeekSummary ? "Ocultar resumen" : "Resumen"}
+                <ChevronDown size={13} style={{ transform: showWeekSummary ? "rotate(180deg)" : "none" }} />
+              </button>
+              {showWeekSummary && (
+                <div style={{ marginTop: 10, padding: "14px 16px", borderRadius: 16, border: "1px solid #2a2824", background: "#1a1917" }}>
+                  <div style={{ fontSize: 12, color: "#8a8580", fontWeight: 700, letterSpacing: 0.5, marginBottom: 10 }}>RESUMEN DE LA SEMANA</div>
+                  {rows.map((r) => (
+                    <div key={r.key} style={{ display: "flex", justifyContent: "space-between", fontSize: 14, padding: "6px 0" }}>
+                      <span style={{ color: "#c9c4bd" }}>{r.label}</span>
+                      <span style={{ color: "#f2ede6", fontWeight: 600 }}>{r.total} series</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          );
+        })()}
+
         <div style={{ display: "flex", gap: 8, marginTop: 18 }}>
           <button
             onClick={() => {
@@ -2157,7 +2206,7 @@ export default function App() {
           <button
             onClick={openCalc1RM}
             style={{
-              flex: "0 0 auto",
+              flex: 1,
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
