@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from "react";
-import { Dumbbell, Plus, ChevronRight, ChevronLeft, ArrowLeft, Check, X, Eye, EyeOff, Trophy, Trash2, Star, Pencil, Share2, FolderClock, Download, Save, Copy, Sparkles, ChevronDown, ChevronUp, Timer, Play, Pause, RotateCcw, Calculator, Calendar as CalendarIcon } from "lucide-react";
+import { Dumbbell, Plus, ChevronRight, ChevronLeft, ArrowLeft, Check, X, Eye, EyeOff, Trophy, Trash2, Star, Pencil, Share2, FolderClock, Download, Save, Copy, Sparkles, ChevronDown, ChevronUp, Timer, Play, Pause, RotateCcw, Calculator, Calendar as CalendarIcon, Image as ImageIcon } from "lucide-react";
 import { auth, db } from "./firebase";
 import {
   createUserWithEmailAndPassword,
@@ -38,6 +38,7 @@ const TRAINING_STORAGE_KEY = "mirutina_training";
 // Historial de cambios que se muestra en "Ver últimas actualizaciones".
 // Para agregar uno nuevo, súmalo arriba de la lista (el más reciente primero).
 const UPDATES = [
+  { date: "11 sept 2026", text: "Ahora puedes ver la foto de cada ejercicio del catálogo tocando el ícono junto a él. Los personalizados todavía no tienen foto." },
   { date: "11 sept 2026", text: "Nuevo calendario en tu rutina: marca los días que entrenaste, revisa meses anteriores y usa el botón 'Marcar día' para registrarlo con un toque." },
   { date: "11 sept 2026", text: "Nuevo botón Resumen en tu rutina: te suma cuántas series haces a la semana por categoría." },
   { date: "10 sept 2026", text: "Nuevo temporizador de descanso y calculadora de 1RM dentro de cada ejercicio." },
@@ -121,6 +122,15 @@ CATEGORIES.forEach((cat) => {
   });
 });
 
+// Ruta de la foto de un ejercicio del catálogo (fx-...). Los personalizados
+// (cx-...) nunca tienen foto, así que ni se llama a esta función para ellos.
+// El nombre del archivo debe ser el mismo slug que ya usamos para el
+// exerciseId: minúsculas, sin tildes, con guiones. Ej: "jalon-al-pecho.webp".
+function exercisePhotoSrc(exerciseId) {
+  const slug = exerciseId.replace(/^fx-/, "");
+  return `/exercises/${slug}.webp`;
+}
+
 function categoryLabel(key) {
   if (key === "descanso") return "Descanso";
   if (key === "personalizada") return "Personalizada";
@@ -154,7 +164,7 @@ function fmtSeconds(s) {
 }
 
 // ---------- small UI atoms ----------
-function PillButton({ children, onClick, subtitle, compact, muted, starred, onEdit, onDelete, onCheck, checked, highlighted }) {
+function PillButton({ children, onClick, subtitle, compact, muted, starred, onEdit, onDelete, onCheck, onPhoto, checked, highlighted }) {
   const btn = (
     <button
       onClick={onClick}
@@ -186,7 +196,7 @@ function PillButton({ children, onClick, subtitle, compact, muted, starred, onEd
       <ChevronRight size={18} color="#6e6a65" style={{ flexShrink: 0 }} />
     </button>
   );
-  if (!onEdit && !onDelete && !onCheck) return <div style={{ marginBottom: compact ? 8 : 10 }}>{btn}</div>;
+  if (!onEdit && !onDelete && !onCheck && !onPhoto) return <div style={{ marginBottom: compact ? 8 : 10 }}>{btn}</div>;
   return (
     <div style={{ display: "flex", alignItems: "center", gap: 2, marginBottom: compact ? 8 : 10 }}>
       {onCheck && (
@@ -210,6 +220,14 @@ function PillButton({ children, onClick, subtitle, compact, muted, starred, onEd
         </button>
       )}
       <div style={{ flex: 1, minWidth: 0 }}>{btn}</div>
+      {onPhoto && (
+        <button
+          onClick={onPhoto}
+          style={{ width: 32, flexShrink: 0, border: "none", background: "transparent", color: "#5c5851", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}
+        >
+          <ImageIcon size={15} />
+        </button>
+      )}
       {onEdit && (
         <button
           onClick={onEdit}
@@ -453,6 +471,49 @@ function TopBar({ title, onBack }) {
   );
 }
 
+function ExercisePhotoOverlay({ name, src, onClose }) {
+  const [failed, setFailed] = useState(false);
+  useEffect(() => {
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => { document.body.style.overflow = prevOverflow; };
+  }, []);
+  return (
+    <div
+      style={{
+        position: "fixed",
+        inset: 0,
+        background: "rgba(15,14,13,0.94)",
+        display: "flex",
+        flexDirection: "column",
+        alignItems: "center",
+        justifyContent: "center",
+        gap: 16,
+        zIndex: 50,
+        padding: "0 24px",
+        boxSizing: "border-box",
+      }}
+    >
+      <button onClick={onClose} style={{ position: "absolute", top: 18, right: 18, background: "none", border: "none", color: "#8a8580", cursor: "pointer" }}>
+        <X size={22} />
+      </button>
+      {failed ? (
+        <div style={{ width: "100%", maxWidth: 320, aspectRatio: "1", borderRadius: 18, border: "1px solid #2a2824", background: "#1a1917", display: "flex", alignItems: "center", justifyContent: "center", color: "#6e6a65", fontSize: 13, textAlign: "center", padding: 20, boxSizing: "border-box" }}>
+          Todavía no subiste la foto de este ejercicio
+        </div>
+      ) : (
+        <img
+          src={src}
+          alt={name}
+          onError={() => setFailed(true)}
+          style={{ width: "100%", maxWidth: 320, borderRadius: 18, border: "1px solid #2a2824", background: "#1a1917" }}
+        />
+      )}
+      <div style={{ color: "#f2ede6", fontSize: 16, fontWeight: 500, textAlign: "center" }}>{name}</div>
+    </div>
+  );
+}
+
 function RestTimerOverlay({ accent, presetIndex, onPickPreset, secondsLeft, running, onToggleRunning, onReset, onClose }) {
   const total = REST_PRESETS[presetIndex];
   const progress = total > 0 ? (total - secondsLeft) / total : 0;
@@ -638,6 +699,8 @@ export default function App() {
   const [updatesOpen, setUpdatesOpen] = useState(false);
   const [allUpdatesOpen, setAllUpdatesOpen] = useState(false);
 
+  const [photoExercise, setPhotoExercise] = useState(null); // ejercicio cuya foto se está mostrando en el overlay
+
   const [restTimerOpen, setRestTimerOpen] = useState(false);
   const [restPresetIndex, setRestPresetIndex] = useState(1);
   const [restSecondsLeft, setRestSecondsLeft] = useState(REST_PRESETS[1]);
@@ -730,6 +793,13 @@ export default function App() {
     }
     return () => clearInterval(restIntervalRef.current);
   }, [restRunning]);
+
+  function openExercisePhoto(ex) {
+    setPhotoExercise(ex);
+  }
+  function closeExercisePhoto() {
+    setPhotoExercise(null);
+  }
 
   function openRestTimer() {
     setRestSecondsLeft(REST_PRESETS[restPresetIndex]);
@@ -2364,6 +2434,7 @@ export default function App() {
                       starred={ex.custom}
                       onClick={() => openExercise(ex)}
                       onDelete={() => quickDeleteExercise(ex)}
+                      onPhoto={!ex.custom ? () => openExercisePhoto(ex) : undefined}
                       onCheck={isTraining ? () => toggleExerciseDone(ex.exerciseId) : undefined}
                       checked={trainingCompleted.has(ex.exerciseId)}
                       subtitle={`${pr !== null ? `PR: ${pr} kg` : "Sin PR"} · ${ex.sets}x${ex.reps} reps`}
@@ -2426,6 +2497,14 @@ export default function App() {
             onClose={() => setRestTimerOpen(false)}
           />
         )}
+
+        {photoExercise && (
+          <ExercisePhotoOverlay
+            name={photoExercise.name}
+            src={exercisePhotoSrc(photoExercise.exerciseId)}
+            onClose={closeExercisePhoto}
+          />
+        )}
       </div>
     );
   }
@@ -2458,6 +2537,7 @@ export default function App() {
                 starred={it.custom}
                 onClick={() => openExerciseForm(it.name, it.id)}
                 onDelete={it.custom ? () => deleteCustomExercise(it.id, it.name) : undefined}
+                onPhoto={!it.custom ? () => openExercisePhoto({ exerciseId: it.id, name: it.name }) : undefined}
               >
                 {it.name}
               </PillButton>
@@ -2468,6 +2548,14 @@ export default function App() {
         <DashedButton onClick={openCustomExerciseForm}>
           <Plus size={17} /> Ejercicio personalizado nuevo
         </DashedButton>
+
+        {photoExercise && (
+          <ExercisePhotoOverlay
+            name={photoExercise.name}
+            src={exercisePhotoSrc(photoExercise.exerciseId)}
+            onClose={closeExercisePhoto}
+          />
+        )}
       </div>
     );
   }
