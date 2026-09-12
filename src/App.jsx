@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from "react";
-import { Dumbbell, Plus, ChevronRight, ChevronLeft, ArrowLeft, Check, X, Eye, EyeOff, Trophy, Trash2, Star, Pencil, Share2, FolderClock, Download, Save, Copy, Sparkles, ChevronDown, ChevronUp, Timer, Play, Pause, RotateCcw, Calculator, Calendar as CalendarIcon, Image as ImageIcon } from "lucide-react";
+import { Dumbbell, Plus, ChevronRight, ChevronLeft, ArrowLeft, Check, X, Eye, EyeOff, Trophy, Trash2, Star, Pencil, Share2, FolderClock, Download, Save, Copy, Sparkles, ChevronDown, ChevronUp, Timer, Play, Pause, RotateCcw, Calculator, Calendar as CalendarIcon, Image as ImageIcon, Medal } from "lucide-react";
 import { auth, db } from "./firebase";
 import {
   createUserWithEmailAndPassword,
@@ -38,6 +38,7 @@ const TRAINING_STORAGE_KEY = "mirutina_training";
 // Historial de cambios que se muestra en "Ver últimas actualizaciones".
 // Para agregar uno nuevo, súmalo arriba de la lista (el más reciente primero).
 const UPDATES = [
+  { date: "12 sept 2026", text: "Nuevas insignias semanales: entrena 3+ días en la semana y gana una insignia. Elige hasta 2 para mostrar en tu inicio desde 'Mis insignias'." },
   { date: "11 sept 2026", text: "Ahora puedes ver la foto de cada ejercicio del catálogo tocando el ícono junto a él. Los personalizados todavía no tienen foto." },
   { date: "11 sept 2026", text: "Nuevo calendario en tu rutina: marca los días que entrenaste, revisa meses anteriores y usa el botón 'Marcar día' para registrarlo con un toque." },
   { date: "11 sept 2026", text: "Nuevo botón Resumen en tu rutina: te suma cuántas series haces a la semana por categoría." },
@@ -60,6 +61,82 @@ function todayISO() {
 function todayDayKey() {
   const map = ["domingo", "lunes", "martes", "miercoles", "jueves", "viernes", "sabado"];
   return map[new Date().getDay()];
+}
+
+// ---------- semanas (lunes a domingo) ----------
+function mondayOf(date) {
+  const dow = date.getDay(); // 0=domingo ... 6=sábado
+  const diff = dow === 0 ? 6 : dow - 1;
+  return new Date(date.getFullYear(), date.getMonth(), date.getDate() - diff);
+}
+function isoOf(date) {
+  return date.toISOString().slice(0, 10);
+}
+function mondayOfCurrentWeekISO() {
+  return isoOf(mondayOf(new Date()));
+}
+function daysTrainedInWeek(completedDays, mondayDate) {
+  let count = 0;
+  for (let i = 0; i < 7; i++) {
+    const d = new Date(mondayDate.getFullYear(), mondayDate.getMonth(), mondayDate.getDate() + i);
+    if (completedDays.has(isoOf(d))) count++;
+  }
+  return count;
+}
+
+// ---------- insignias semanales (orden fijo, se repite cada 7 semanas) ----------
+const BADGE_ANIMALS = ["perro", "gato-negro", "mapache", "elefante", "buho", "conejo", "gato"];
+// Semana de referencia para contar cuántas semanas han pasado. No cambiar esta fecha:
+// si se cambia, se corre el orden de las semanas siguientes.
+const BADGE_EPOCH_MONDAY = new Date(2026, 8, 7); // lunes de esta semana (7 sept 2026)
+
+// Animal de una semana: recorre BADGE_ANIMALS en el orden exacto en que está escrito,
+// una posición por semana, y al llegar al final vuelve a empezar desde el primero.
+// OJO: si más adelante agregas o quitas animales del arreglo, cambia cuántas semanas
+// tiene cada vuelta, así que las semanas futuras (no las que ya se vieron) pueden
+// recalcularse a otro animal la próxima vez que se abran.
+function weekAnimalFor(weekKey) {
+  const monday = new Date(weekKey + "T00:00:00");
+  const diffDays = Math.round((monday.getTime() - BADGE_EPOCH_MONDAY.getTime()) / 86400000);
+  const n = BADGE_ANIMALS.length;
+  const weekNum = Math.floor(diffDays / 7);
+  const index = ((weekNum % n) + n) % n;
+  return BADGE_ANIMALS[index];
+}
+function badgeImageSrc(animal, tier) {
+  return `/badges/${animal}-${tier}.webp`;
+}
+// Insignia de la semana en curso: solo vista previa en vivo, NO se puede seleccionar
+// todavía (se "reparte" recién cuando la semana termina).
+function computeCurrentWeekBadge(completedDays) {
+  const monday = mondayOf(new Date());
+  const count = daysTrainedInWeek(completedDays, monday);
+  if (count < 3) return null;
+  const weekKey = isoOf(monday);
+  return { weekKey, animal: weekAnimalFor(weekKey), tier: Math.min(count, 5), days: count };
+}
+// Insignias ya "entregadas": una por cada semana pasada (ya terminada) en la que se
+// llegó a 3+ días, con el nivel más alto alcanzado esa semana. Se calcula solo a
+// partir de completedDays, así que no hay nada que se pueda perder o duplicar.
+function computeEarnedBadges(completedDays) {
+  const currentMondayTime = mondayOf(new Date()).getTime();
+  const weekKeys = new Set();
+  completedDays.forEach((iso) => {
+    const d = new Date(iso + "T00:00:00");
+    const wMonday = mondayOf(d);
+    if (wMonday.getTime() >= currentMondayTime) return; // excluye la semana en curso
+    weekKeys.add(isoOf(wMonday));
+  });
+  const badges = [];
+  weekKeys.forEach((weekKey) => {
+    const wMonday = new Date(weekKey + "T00:00:00");
+    const count = daysTrainedInWeek(completedDays, wMonday);
+    if (count >= 3) {
+      badges.push({ weekKey, animal: weekAnimalFor(weekKey), tier: Math.min(count, 5), days: count });
+    }
+  });
+  badges.sort((a, b) => b.weekKey.localeCompare(a.weekKey));
+  return badges;
 }
 
 // ---------- calendario de días completados ----------
@@ -423,22 +500,24 @@ function RoutineCalendar({ completedDays, onToggleDay }) {
           if (d === null) return <div key={i} />;
           const key = fechaKey(viewYear, viewMonth, d);
           const isFuture = key > today;
+          const isPastWeek = key < mondayOfCurrentWeekISO();
           const isToday = key === today;
           const isDone = completedDays.has(key);
+          const isDisabled = isFuture || isPastWeek;
           return (
             <button
               key={i}
-              disabled={isFuture}
+              disabled={isDisabled}
               onClick={() => onToggleDay(key)}
               style={{
                 aspectRatio: "1 / 1",
                 borderRadius: 10,
                 border: isToday && !isDone ? `1.5px solid ${CURRENT_ACCENT.solid}` : "1px solid transparent",
                 background: isDone ? CURRENT_ACCENT.solid : "transparent",
-                color: isFuture ? "#4a463f" : isDone ? CURRENT_ACCENT.text : "#d7d2ca",
+                color: isDisabled ? "#4a463f" : isDone ? CURRENT_ACCENT.text : "#d7d2ca",
                 fontSize: 13,
                 fontWeight: isDone ? 700 : 500,
-                cursor: isFuture ? "default" : "pointer",
+                cursor: isDisabled ? "default" : "pointer",
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "center",
@@ -467,6 +546,41 @@ function TopBar({ title, onBack }) {
         </button>
       )}
       {title && <div style={{ fontSize: 15, fontWeight: 600, color: "#c9c4bd" }}>{title}</div>}
+    </div>
+  );
+}
+
+// Imagen de insignia con reemplazo si todavía no subiste ese archivo (ej. niveles
+// intermedios que aún no has generado en ChatGPT).
+// Ajusta estos dos números si la insignia necesita recortarse más o menos:
+// BADGE_ZOOM > 1 agranda la imagen dentro del círculo (recorta bordes).
+// BADGE_SHIFT_UP_PCT sube la imagen para tapar el espacio vacío de arriba (más alto = sube más).
+const BADGE_ZOOM = 1.05;
+const BADGE_SHIFT_UP_PCT = 4;
+
+function BadgeImg({ animal, tier, size }) {
+  const [failed, setFailed] = useState(false);
+  if (failed) {
+    return (
+      <div style={{ width: size, height: size, borderRadius: "50%", background: "#232019", border: "1px solid #33312e", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+        <Medal size={Math.round(size * 0.45)} color="#8a8580" />
+      </div>
+    );
+  }
+  return (
+    <div style={{ width: size, height: size, borderRadius: "50%", overflow: "hidden", flexShrink: 0 }}>
+      <img
+        src={badgeImageSrc(animal, tier)}
+        alt={`${animal} ${tier} días`}
+        onError={() => setFailed(true)}
+        style={{
+          width: `${BADGE_ZOOM * 100}%`,
+          height: `${BADGE_ZOOM * 100}%`,
+          objectFit: "cover",
+          display: "block",
+          transform: `translateY(-${BADGE_SHIFT_UP_PCT}%)`,
+        }}
+      />
     </div>
   );
 }
@@ -767,7 +881,7 @@ export default function App() {
       if (fbUser) {
         const profileSnap = await getDoc(doc(db, "users", fbUser.uid));
         const profile = profileSnap.exists() ? profileSnap.data() : { username: fbUser.email };
-        const user = { uid: fbUser.uid, email: fbUser.email, username: profile.username, accentColor: profile.accentColor || "coral", displayName: profile.displayName || profile.username };
+        const user = { uid: fbUser.uid, email: fbUser.email, username: profile.username, accentColor: profile.accentColor || "coral", displayName: profile.displayName || profile.username, selectedBadges: profile.selectedBadges || [] };
         setCurrentUser(user);
         await loadRutina(user);
         setScreen((s) => (s === "login" || s === "register" ? "home" : s));
@@ -991,8 +1105,21 @@ export default function App() {
     await setDoc(doc(db, "users", currentUser.uid), { accentColor: key }, { merge: true });
   }
 
+  async function toggleSelectedBadge(weekKey) {
+    const current = currentUser?.selectedBadges || [];
+    let next;
+    if (current.includes(weekKey)) {
+      next = current.filter((k) => k !== weekKey);
+    } else {
+      if (current.length >= 2) return; // máximo 2
+      next = [...current, weekKey];
+    }
+    setCurrentUser((prev) => ({ ...prev, selectedBadges: next }));
+    await setDoc(doc(db, "users", currentUser.uid), { selectedBadges: next }, { merge: true });
+  }
+
   async function updateDisplayName(name) {
-    const trimmed = name.trim();
+    const trimmed = name.trim().slice(0, 14);
     if (!trimmed) return;
     setCurrentUser((prev) => ({ ...prev, displayName: trimmed }));
     await setDoc(doc(db, "users", currentUser.uid), { displayName: trimmed }, { merge: true });
@@ -1598,6 +1725,10 @@ export default function App() {
 
   // ---------- HOME ----------
   if (screen === "home") {
+    const currentWeekBadge = computeCurrentWeekBadge(completedDays);
+    const earnedBadges = computeEarnedBadges(completedDays);
+    const badgeSlots = (currentUser?.selectedBadges || []).map((wk) => earnedBadges.find((b) => b.weekKey === wk)).filter(Boolean);
+    while (badgeSlots.length < 2) badgeSlots.push(null);
     return (
       <div style={shell}>
         {success && <SuccessOverlay message={success} />}
@@ -1655,7 +1786,7 @@ export default function App() {
                   <input
                     value={displayNameValue}
                     onChange={(e) => setDisplayNameValue(e.target.value)}
-                    maxLength={24}
+                    maxLength={14}
                     style={{
                       flex: 1,
                       minWidth: 0,
@@ -1763,8 +1894,36 @@ export default function App() {
               </div>
               <div style={{ fontSize: 13.5, color: accent.text, opacity: 0.75, fontWeight: 600 }}>Hola</div>
             </div>
-            <div style={{ fontSize: 26, fontWeight: 800, color: accent.text, lineHeight: 1.1 }}>{currentUser?.displayName || currentUser?.username || ""}</div>
-            <div style={{ fontSize: 13.5, color: accent.text, opacity: 0.65, marginTop: 4 }}>MiRutina App</div>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
+              <div>
+                <div style={{ fontSize: 26, fontWeight: 800, color: accent.text, lineHeight: 1.1 }}>{currentUser?.displayName || currentUser?.username || ""}</div>
+                <div style={{ fontSize: 13.5, color: accent.text, opacity: 0.65, marginTop: 4 }}>MiRutina App</div>
+              </div>
+              {currentWeekBadge && (
+                <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 3, flexShrink: 0, marginRight: 70 }}>
+                  <BadgeImg animal={currentWeekBadge.animal} tier={currentWeekBadge.tier} size={112} />
+                </div>
+              )}
+            </div>
+
+            <div style={{ height: 1, background: "rgba(255,255,255,0.2)", marginTop: 14, marginBottom: 12 }} />
+            <button
+              onClick={() => setScreen("badges")}
+              style={{ width: "100%", display: "flex", alignItems: "center", justifyContent: "space-between", background: "none", border: "none", padding: 0, cursor: "pointer" }}
+            >
+              <span style={{ fontSize: 12, color: accent.text, opacity: 0.85, fontWeight: 600 }}>Mis insignias</span>
+              <span style={{ display: "flex", gap: 8 }}>
+                {badgeSlots.map((b, i) =>
+                  b ? (
+                    <BadgeImg key={i} animal={b.animal} tier={b.tier} size={38} />
+                  ) : (
+                    <span key={i} style={{ width: 38, height: 38, borderRadius: "50%", border: "1.5px dashed rgba(255,255,255,0.55)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                      <Plus size={15} color={accent.text} />
+                    </span>
+                  )
+                )}
+              </span>
+            </button>
           </div>
         </div>
 
@@ -2504,6 +2663,53 @@ export default function App() {
             src={exercisePhotoSrc(photoExercise.exerciseId)}
             onClose={closeExercisePhoto}
           />
+        )}
+      </div>
+    );
+  }
+
+  // ---------- MIS INSIGNIAS ----------
+  if (screen === "badges") {
+    const earnedBadges = computeEarnedBadges(completedDays);
+    const selected = currentUser?.selectedBadges || [];
+    return (
+      <div style={shell}>
+        <TopBar title="Mis insignias" onBack={() => setScreen("home")} />
+        <div style={{ fontSize: 13, color: "#a39d95", marginBottom: 18, lineHeight: 1.5 }}>
+          Elige hasta 2 para mostrar en tu inicio. Cada semana que entrenas 3 días o más gana una insignia nueva, apenas la semana termina.
+        </div>
+
+        {earnedBadges.length === 0 ? (
+          <div style={{ border: "1px dashed #33312e", borderRadius: 16, padding: "28px 16px", textAlign: "center", color: "#8a8580", fontSize: 13.5 }}>
+            Todavía no tienes insignias. Entrena 3 días o más en una semana para ganar la primera.
+          </div>
+        ) : (
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 12 }}>
+            {earnedBadges.map((b) => {
+              const isSelected = selected.includes(b.weekKey);
+              return (
+                <button
+                  key={b.weekKey}
+                  onClick={() => toggleSelectedBadge(b.weekKey)}
+                  style={{
+                    display: "flex",
+                    flexDirection: "column",
+                    alignItems: "center",
+                    gap: 6,
+                    padding: "12px 6px",
+                    borderRadius: 16,
+                    border: isSelected ? `1.5px solid ${accent.solid}` : "1.5px solid #2a2824",
+                    background: "#1a1917",
+                    cursor: "pointer",
+                  }}
+                >
+                  <BadgeImg animal={b.animal} tier={b.tier} size={54} />
+                  <div style={{ fontSize: 11, color: "#f2ede6", fontWeight: 600, textTransform: "capitalize" }}>{b.animal}</div>
+                  <div style={{ fontSize: 10, color: "#8a8580" }}>{b.days} días</div>
+                </button>
+              );
+            })}
+          </div>
         )}
       </div>
     );
