@@ -2019,10 +2019,10 @@ export default function App() {
               <span style={{ display: "flex", gap: 8 }}>
                 {badgeSlots.map((b, i) =>
                   b ? (
-                    <BadgeImg key={i} animal={b.animal} tier={b.tier} src={b.src} size={38} />
+                    <BadgeImg key={i} animal={b.animal} tier={b.tier} src={b.src} size={50} />
                   ) : (
-                    <span key={i} style={{ width: 38, height: 38, borderRadius: "50%", border: "1.5px dashed rgba(255,255,255,0.55)", display: "flex", alignItems: "center", justifyContent: "center" }}>
-                      <Plus size={15} color={accent.text} />
+                    <span key={i} style={{ width: 50, height: 50, borderRadius: "50%", border: "1.5px dashed rgba(255,255,255,0.55)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                      <Plus size={19} color={accent.text} />
                     </span>
                   )
                 )}
@@ -2836,7 +2836,7 @@ export default function App() {
                     cursor: "pointer",
                   }}
                 >
-                  <BadgeImg src={b.src} size={54} />
+                  <BadgeImg src={b.src} size={78} />
                   <div style={{ fontSize: 11, color: "#f2ede6", fontWeight: 600 }}>{b.label}</div>
                   <div style={{ fontSize: 10, color: "#8a8580" }}>Especial</div>
                 </button>
@@ -2860,7 +2860,7 @@ export default function App() {
                     cursor: "pointer",
                   }}
                 >
-                  <BadgeImg animal={b.animal} tier={b.tier} size={54} />
+                  <BadgeImg animal={b.animal} tier={b.tier} size={78} />
                   <div style={{ fontSize: 11, color: "#f2ede6", fontWeight: 600, textTransform: "capitalize" }}>{b.animal}</div>
                   <div style={{ fontSize: 10, color: "#8a8580" }}>{b.days} días</div>
                 </button>
