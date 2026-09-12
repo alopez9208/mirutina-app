@@ -106,6 +106,26 @@ function weekAnimalFor(weekKey) {
 function badgeImageSrc(animal, tier) {
   return `/badges/${animal}-${tier}.webp`;
 }
+
+// ---------- insignias especiales (se le "regalan" a mano a un usuario desde su
+// documento en Firestore, no dependen de días entrenados). Para dársela a alguien,
+// en Firestore > users > <uid>, agrega el campo specialBadges: ["beta"].
+const SPECIAL_BADGES = [
+  { id: "beta", label: "Beta" },
+];
+function specialBadgeImageSrc(id) {
+  return `/badges/${id}.webp`;
+}
+// Devuelve las insignias especiales que el usuario realmente tiene, con un id
+// único (prefijo "special:") para no chocar con los weekKey de las semanales.
+function ownedSpecialBadges(currentUser) {
+  const owned = currentUser?.specialBadges || [];
+  return SPECIAL_BADGES.filter((sb) => owned.includes(sb.id)).map((sb) => ({
+    id: `special:${sb.id}`,
+    label: sb.label,
+    src: specialBadgeImageSrc(sb.id),
+  }));
+}
 // Insignia de la semana en curso: solo vista previa en vivo, NO se puede seleccionar
 // todavía (se "reparte" recién cuando la semana termina).
 function computeCurrentWeekBadge(completedDays) {
@@ -558,8 +578,9 @@ function TopBar({ title, onBack }) {
 const BADGE_ZOOM = 1.05;
 const BADGE_SHIFT_UP_PCT = 4;
 
-function BadgeImg({ animal, tier, size }) {
+function BadgeImg({ animal, tier, size, src }) {
   const [failed, setFailed] = useState(false);
+  const imgSrc = src || badgeImageSrc(animal, tier);
   if (failed) {
     return (
       <div style={{ width: size, height: size, borderRadius: "50%", background: "#232019", border: "1px solid #33312e", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
@@ -570,8 +591,8 @@ function BadgeImg({ animal, tier, size }) {
   return (
     <div style={{ width: size, height: size, borderRadius: "50%", overflow: "hidden", flexShrink: 0 }}>
       <img
-        src={badgeImageSrc(animal, tier)}
-        alt={`${animal} ${tier} días`}
+        src={imgSrc}
+        alt={animal ? `${animal} ${tier} días` : "insignia"}
         onError={() => setFailed(true)}
         style={{
           width: `${BADGE_ZOOM * 100}%`,
@@ -581,6 +602,71 @@ function BadgeImg({ animal, tier, size }) {
           transform: `translateY(-${BADGE_SHIFT_UP_PCT}%)`,
         }}
       />
+    </div>
+  );
+}
+
+function BadgeCelebrationOverlay({ animal, tier, onClose }) {
+  const [stage, setStage] = useState(0); // 0: entrando, 1: badge visible, 2: texto visible
+  useEffect(() => {
+    const t1 = setTimeout(() => setStage(1), 60);
+    const t2 = setTimeout(() => setStage(2), 420);
+    return () => { clearTimeout(t1); clearTimeout(t2); };
+  }, []);
+  return (
+    <div
+      style={{
+        position: "fixed",
+        inset: 0,
+        background: "rgba(15,14,13,0.92)",
+        display: "flex",
+        flexDirection: "column",
+        alignItems: "center",
+        justifyContent: "center",
+        gap: 10,
+        zIndex: 60,
+        textAlign: "center",
+        padding: "0 24px",
+      }}
+    >
+      <button onClick={onClose} style={{ position: "absolute", top: 18, right: 18, background: "none", border: "none", color: "#8a8580", cursor: "pointer" }}>
+        <X size={22} />
+      </button>
+
+      <div
+        style={{
+          width: 132,
+          height: 132,
+          opacity: stage >= 1 ? 1 : 0,
+          transform: stage >= 1 ? "scale(1)" : "scale(0.4)",
+          transition: "opacity 0.35s ease, transform 0.5s cubic-bezier(.34,1.56,.64,1)",
+        }}
+      >
+        <BadgeImg animal={animal} tier={tier} size={132} />
+      </div>
+
+      <div style={{ opacity: stage >= 2 ? 1 : 0, transition: "opacity 0.4s ease", marginTop: 6 }}>
+        <div style={{ fontSize: 19, fontWeight: 700, color: "#f2ede6", marginBottom: 4 }}>¡Nueva insignia!</div>
+        <div style={{ fontSize: 14, color: "#a39d95" }}>{tier} días seguidos esta semana</div>
+      </div>
+
+      <button
+        onClick={onClose}
+        style={{
+          opacity: stage >= 2 ? 1 : 0,
+          transition: "opacity 0.4s ease",
+          marginTop: 14,
+          padding: "9px 22px",
+          borderRadius: 999,
+          border: "1px solid #33312e",
+          background: "#1f1e1c",
+          color: "#f2ede6",
+          fontSize: 13.5,
+          cursor: "pointer",
+        }}
+      >
+        Genial
+      </button>
     </div>
   );
 }
@@ -812,6 +898,7 @@ export default function App() {
   const [displayNameValue, setDisplayNameValue] = useState("");
   const [updatesOpen, setUpdatesOpen] = useState(false);
   const [allUpdatesOpen, setAllUpdatesOpen] = useState(false);
+  const updatesButtonRef = useRef(null);
 
   const [photoExercise, setPhotoExercise] = useState(null); // ejercicio cuya foto se está mostrando en el overlay
 
@@ -860,6 +947,7 @@ export default function App() {
   const [showWeekSummary, setShowWeekSummary] = useState(false);
   const [showCalendar, setShowCalendar] = useState(false);
   const [completedDays, setCompletedDays] = useState(new Set());
+  const [newBadgeCelebration, setNewBadgeCelebration] = useState(null); // { animal, tier } o null
   const [renamingSavedId, setRenamingSavedId] = useState(null);
   const [renameSavedValue, setRenameSavedValue] = useState("");
   const [savingCurrent, setSavingCurrent] = useState(false);
@@ -881,7 +969,7 @@ export default function App() {
       if (fbUser) {
         const profileSnap = await getDoc(doc(db, "users", fbUser.uid));
         const profile = profileSnap.exists() ? profileSnap.data() : { username: fbUser.email };
-        const user = { uid: fbUser.uid, email: fbUser.email, username: profile.username, accentColor: profile.accentColor || "coral", displayName: profile.displayName || profile.username, selectedBadges: profile.selectedBadges || [] };
+        const user = { uid: fbUser.uid, email: fbUser.email, username: profile.username, accentColor: profile.accentColor || "coral", displayName: profile.displayName || profile.username, selectedBadges: profile.selectedBadges || [], specialBadges: profile.specialBadges || [] };
         setCurrentUser(user);
         await loadRutina(user);
         setScreen((s) => (s === "login" || s === "register" ? "home" : s));
@@ -1067,9 +1155,21 @@ export default function App() {
   async function toggleCompletedDay(dateKey) {
     const wasDone = completedDays.has(dateKey);
     setCompletedDays((prev) => {
+      const wasDonePrev = prev.has(dateKey);
+      const badgeBefore = computeCurrentWeekBadge(prev);
       const next = new Set(prev);
-      if (wasDone) next.delete(dateKey);
+      if (wasDonePrev) next.delete(dateKey);
       else next.add(dateKey);
+      // Si al marcar el día sube el nivel de la insignia de esta semana (o se
+      // gana la primera vez), disparamos la celebración con el resultado nuevo.
+      // Ojo: el tier se topa en 5 (ver computeCurrentWeekBadge), así que pasar
+      // de 5 a 6+ días da el mismo tier y NO vuelve a disparar la animación.
+      if (!wasDonePrev) {
+        const badgeAfter = computeCurrentWeekBadge(next);
+        if (badgeAfter && (!badgeBefore || badgeAfter.tier > badgeBefore.tier)) {
+          setNewBadgeCelebration(badgeAfter);
+        }
+      }
       return next;
     });
     try {
@@ -1727,7 +1827,11 @@ export default function App() {
   if (screen === "home") {
     const currentWeekBadge = computeCurrentWeekBadge(completedDays);
     const earnedBadges = computeEarnedBadges(completedDays);
-    const badgeSlots = (currentUser?.selectedBadges || []).map((wk) => earnedBadges.find((b) => b.weekKey === wk)).filter(Boolean);
+    const selectableBadges = [
+      ...earnedBadges.map((b) => ({ id: b.weekKey, animal: b.animal, tier: b.tier })),
+      ...ownedSpecialBadges(currentUser),
+    ];
+    const badgeSlots = (currentUser?.selectedBadges || []).map((id) => selectableBadges.find((b) => b.id === id)).filter(Boolean);
     while (badgeSlots.length < 2) badgeSlots.push(null);
     return (
       <div style={shell}>
@@ -1915,7 +2019,7 @@ export default function App() {
               <span style={{ display: "flex", gap: 8 }}>
                 {badgeSlots.map((b, i) =>
                   b ? (
-                    <BadgeImg key={i} animal={b.animal} tier={b.tier} size={38} />
+                    <BadgeImg key={i} animal={b.animal} tier={b.tier} src={b.src} size={38} />
                   ) : (
                     <span key={i} style={{ width: 38, height: 38, borderRadius: "50%", border: "1.5px dashed rgba(255,255,255,0.55)", display: "flex", alignItems: "center", justifyContent: "center" }}>
                       <Plus size={15} color={accent.text} />
@@ -1960,7 +2064,18 @@ export default function App() {
         </button>
 
         <button
-          onClick={() => setUpdatesOpen((v) => !v)}
+          ref={updatesButtonRef}
+          onClick={() => {
+            setUpdatesOpen((v) => {
+              const next = !v;
+              if (next) {
+                setTimeout(() => {
+                  updatesButtonRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+                }, 60);
+              }
+              return next;
+            });
+          }}
           style={{
             width: "100%",
             display: "flex",
@@ -2017,7 +2132,7 @@ export default function App() {
         {allUpdatesOpen && (
           <div
             style={{
-              position: "absolute",
+              position: "fixed",
               inset: 0,
               background: "rgba(15,14,13,0.96)",
               zIndex: 50,
@@ -2263,6 +2378,14 @@ export default function App() {
               <Copy size={13} /> Copiar
             </button>
           </div>
+        )}
+
+        {newBadgeCelebration && (
+          <BadgeCelebrationOverlay
+            animal={newBadgeCelebration.animal}
+            tier={newBadgeCelebration.tier}
+            onClose={() => setNewBadgeCelebration(null)}
+          />
         )}
       </div>
     );
@@ -2657,6 +2780,14 @@ export default function App() {
           />
         )}
 
+        {newBadgeCelebration && (
+          <BadgeCelebrationOverlay
+            animal={newBadgeCelebration.animal}
+            tier={newBadgeCelebration.tier}
+            onClose={() => setNewBadgeCelebration(null)}
+          />
+        )}
+
         {photoExercise && (
           <ExercisePhotoOverlay
             name={photoExercise.name}
@@ -2671,7 +2802,9 @@ export default function App() {
   // ---------- MIS INSIGNIAS ----------
   if (screen === "badges") {
     const earnedBadges = computeEarnedBadges(completedDays);
+    const specialBadges = ownedSpecialBadges(currentUser);
     const selected = currentUser?.selectedBadges || [];
+    const hasAny = earnedBadges.length > 0 || specialBadges.length > 0;
     return (
       <div style={shell}>
         <TopBar title="Mis insignias" onBack={() => setScreen("home")} />
@@ -2679,12 +2812,36 @@ export default function App() {
           Elige hasta 2 para mostrar en tu inicio. Cada semana que entrenas 3 días o más gana una insignia nueva, apenas la semana termina.
         </div>
 
-        {earnedBadges.length === 0 ? (
+        {!hasAny ? (
           <div style={{ border: "1px dashed #33312e", borderRadius: 16, padding: "28px 16px", textAlign: "center", color: "#8a8580", fontSize: 13.5 }}>
             Todavía no tienes insignias. Entrena 3 días o más en una semana para ganar la primera.
           </div>
         ) : (
           <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 12 }}>
+            {specialBadges.map((b) => {
+              const isSelected = selected.includes(b.id);
+              return (
+                <button
+                  key={b.id}
+                  onClick={() => toggleSelectedBadge(b.id)}
+                  style={{
+                    display: "flex",
+                    flexDirection: "column",
+                    alignItems: "center",
+                    gap: 6,
+                    padding: "12px 6px",
+                    borderRadius: 16,
+                    border: isSelected ? `1.5px solid ${accent.solid}` : "1.5px solid #2a2824",
+                    background: "#1a1917",
+                    cursor: "pointer",
+                  }}
+                >
+                  <BadgeImg src={b.src} size={54} />
+                  <div style={{ fontSize: 11, color: "#f2ede6", fontWeight: 600 }}>{b.label}</div>
+                  <div style={{ fontSize: 10, color: "#8a8580" }}>Especial</div>
+                </button>
+              );
+            })}
             {earnedBadges.map((b) => {
               const isSelected = selected.includes(b.weekKey);
               return (
