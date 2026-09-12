@@ -38,7 +38,7 @@ const TRAINING_STORAGE_KEY = "mirutina_training";
 // Historial de cambios que se muestra en "Ver últimas actualizaciones".
 // Para agregar uno nuevo, súmalo arriba de la lista (el más reciente primero).
 const UPDATES = [
-  { date: "12 sept 2026", text: "Nuevas insignias semanales: entrena 3+ días en la semana y gana una insignia. Elige hasta 2 para mostrar en tu inicio desde 'Mis insignias'." },
+  { date: "12 sept 2026", text: "Nuevas insignias semanales: entrena 2+ días en la semana y gana una insignia. Elige hasta 2 para mostrar en tu inicio desde 'Mis insignias'." },
   { date: "11 sept 2026", text: "Ahora puedes ver la foto de cada ejercicio del catálogo tocando el ícono junto a él. Los personalizados todavía no tienen foto." },
   { date: "11 sept 2026", text: "Nuevo calendario en tu rutina: marca los días que entrenaste, revisa meses anteriores y usa el botón 'Marcar día' para registrarlo con un toque." },
   { date: "11 sept 2026", text: "Nuevo botón Resumen en tu rutina: te suma cuántas series haces a la semana por categoría." },
@@ -131,9 +131,9 @@ function ownedSpecialBadges(currentUser) {
 function computeCurrentWeekBadge(completedDays) {
   const monday = mondayOf(new Date());
   const count = daysTrainedInWeek(completedDays, monday);
-  if (count < 3) return null;
+  if (count < 2) return null;
   const weekKey = isoOf(monday);
-  return { weekKey, animal: weekAnimalFor(weekKey), tier: Math.min(count, 5), days: count };
+  return { weekKey, animal: weekAnimalFor(weekKey), tier: Math.min(count, 4), days: count };
 }
 // Insignias ya "entregadas": una por cada semana pasada (ya terminada) en la que se
 // llegó a 3+ días, con el nivel más alto alcanzado esa semana. Se calcula solo a
@@ -151,8 +151,8 @@ function computeEarnedBadges(completedDays) {
   weekKeys.forEach((weekKey) => {
     const wMonday = new Date(weekKey + "T00:00:00");
     const count = daysTrainedInWeek(completedDays, wMonday);
-    if (count >= 3) {
-      badges.push({ weekKey, animal: weekAnimalFor(weekKey), tier: Math.min(count, 5), days: count });
+    if (count >= 2) {
+      badges.push({ weekKey, animal: weekAnimalFor(weekKey), tier: Math.min(count, 4), days: count });
     }
   });
   badges.sort((a, b) => b.weekKey.localeCompare(a.weekKey));
@@ -2809,12 +2809,12 @@ export default function App() {
       <div style={shell}>
         <TopBar title="Mis insignias" onBack={() => setScreen("home")} />
         <div style={{ fontSize: 13, color: "#a39d95", marginBottom: 18, lineHeight: 1.5 }}>
-          Elige hasta 2 para mostrar en tu inicio. Cada semana que entrenas 3 días o más gana una insignia nueva, apenas la semana termina.
+          Elige hasta 2 para mostrar en tu inicio. Cada semana que entrenas 2 días o más gana una insignia nueva, apenas la semana termina.
         </div>
 
         {!hasAny ? (
           <div style={{ border: "1px dashed #33312e", borderRadius: 16, padding: "28px 16px", textAlign: "center", color: "#8a8580", fontSize: 13.5 }}>
-            Todavía no tienes insignias. Entrena 3 días o más en una semana para ganar la primera.
+            Todavía no tienes insignias. Entrena 2 días o más en una semana para ganar la primera.
           </div>
         ) : (
           <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 12 }}>
