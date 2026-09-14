@@ -12,11 +12,65 @@ service cloud.firestore {
     }
 
     match /users/{userId} {
-      allow read, write: if request.auth != null && request.auth.uid == userId;
+      // Documento base del perfil: el dueño puede leer/escribir todo. Cualquier
+      // otro usuario logueado puede LEERLO (nada más) para poder buscarlo por
+      // username y ver su nombre/insignias en la tarjeta de amigo, incluso
+      // antes de ser amigos.
+      // OJO: este doc guarda también "email" (se guarda junto con username al
+      // registrarte). Con esta regla, el email queda visible para cualquier
+      // usuario logueado que conozca tu username, no solo tus amigos. Si te
+      // preocupa, lo más limpio es mover "email" a una subcolección privada
+      // (p.ej. users/{uid}/private/data) que solo el dueño pueda leer.
+      allow read: if request.auth != null;
+      allow write: if request.auth != null && request.auth.uid == userId;
 
-      // Cubre TODAS las subcolecciones bajo users/{userId}, sin importar
-      // el nombre: rutina, exercises, customRoutines, savedRoutines,
-      // completedDays, y cualquier otra que se agregue en el futuro.
+      // completedDays: el dueño tiene control total. Un amigo YA ACEPTADO
+      // puede leerlos para calcular la insignia de la semana que se muestra
+      // en la tarjeta de "Amigos".
+      match /completedDays/{dayId} {
+        allow read: if request.auth != null &&
+          (request.auth.uid == userId ||
+           exists(/databases/$(database)/documents/users/$(userId)/friends/$(request.auth.uid)));
+        allow write: if request.auth != null && request.auth.uid == userId;
+      }
+
+      // friendRequests: el dueño (userId) ve y gestiona TODAS las que le
+      // llegaron. Cualquier otro usuario autenticado puede:
+      //  - crear una solicitud dirigida a este usuario, siempre que el id del
+      //    documento sea su propio uid (no puede suplantar a otro remitente)
+      //    y que el campo fromUid coincida con quien la envía.
+      //  - leer (get) SOLO la que él mismo envió, para saber si ya existe.
+      // Nunca puede leer, editar o borrar las solicitudes de otros.
+      match /friendRequests/{requesterId} {
+        allow read, write: if request.auth != null && request.auth.uid == userId;
+        allow get: if request.auth != null && request.auth.uid == requesterId;
+        allow create: if request.auth != null &&
+          request.auth.uid == requesterId &&
+          request.resource.data.fromUid == request.auth.uid;
+      }
+
+      // friends: el dueño (userId) administra su propia lista completa.
+      // Cuando dos usuarios se hacen amigos, cada uno también escribe una
+      // entrada en la subcolección "friends" del OTRO, para que ambos se vean
+      // mutuamente sin pasos extra. Esa escritura cruzada solo se permite si:
+      //  - estás creando TU PROPIA entrada (friendId == tu uid), y
+      //  - el dueño (userId) te había enviado antes una solicitud que
+      //    todavía tienes en tu propia friendRequests en el momento de
+      //    aceptar (se borra en un paso aparte, sin choque de orden).
+      // Borrar tu propia entrada de la lista de otro (para deshacer la
+      // amistad) siempre está permitido.
+      match /friends/{friendId} {
+        allow read, write: if request.auth != null && request.auth.uid == userId;
+        allow create: if request.auth != null &&
+          friendId == request.auth.uid &&
+          request.resource.data.uid == request.auth.uid &&
+          exists(/databases/$(database)/documents/users/$(request.auth.uid)/friendRequests/$(userId));
+        allow delete: if request.auth != null && friendId == request.auth.uid;
+      }
+
+      // Resto de subcolecciones (rutina, exercises, customRoutines,
+      // savedRoutines, y cualquier otra futura): totalmente privadas, solo
+      // el dueño puede leerlas o escribirlas.
       match /{document=**} {
         allow read, write: if request.auth != null && request.auth.uid == userId;
       }
