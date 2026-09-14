@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from "react";
-import { Dumbbell, Plus, ChevronRight, ChevronLeft, ArrowLeft, Check, X, Eye, EyeOff, Trophy, Trash2, Star, Pencil, Share2, FolderClock, Download, Save, Copy, Sparkles, ChevronDown, ChevronUp, Timer, Play, Pause, RotateCcw, Calculator, Calendar as CalendarIcon, Image as ImageIcon, Medal } from "lucide-react";
+import { Dumbbell, Plus, ChevronRight, ChevronLeft, ArrowLeft, Check, X, Eye, EyeOff, Trophy, Trash2, Star, Pencil, Share2, FolderClock, Download, Save, Copy, Sparkles, ChevronDown, ChevronUp, Timer, Play, Pause, RotateCcw, Calculator, Calendar as CalendarIcon, Image as ImageIcon, Medal, Users, UserPlus, Search } from "lucide-react";
 import { auth, db } from "./firebase";
 import {
   createUserWithEmailAndPassword,
@@ -38,6 +38,7 @@ const TRAINING_STORAGE_KEY = "mirutina_training";
 // Historial de cambios que se muestra en "Ver últimas actualizaciones".
 // Para agregar uno nuevo, súmalo arriba de la lista (el más reciente primero).
 const UPDATES = [
+  { date: "13 sept 2026", text: "Nueva sección de Amigos: agrégalos por su usuario y visualiza la insignia semanal que van ganando." },
   { date: "12 sept 2026", text: "Nuevas insignias semanales: entrena 2+ días en la semana y gana una insignia. Elige hasta 2 para mostrar en tu inicio desde 'Mis insignias'." },
   { date: "11 sept 2026", text: "Ahora puedes ver la foto de cada ejercicio del catálogo tocando el ícono junto a él. Los personalizados todavía no tienen foto." },
   { date: "11 sept 2026", text: "Nuevo calendario en tu rutina: marca los días que entrenaste, revisa meses anteriores y usa el botón 'Marcar día' para registrarlo con un toque." },
@@ -112,6 +113,8 @@ function badgeImageSrc(animal, tier) {
 // en Firestore > users > <uid>, agrega el campo specialBadges: ["beta"].
 const SPECIAL_BADGES = [
   { id: "beta", label: "Beta" },
+  { id: "vip1", label: "VIP" },
+  { id: "vip2", label: "VIP" },
 ];
 function specialBadgeImageSrc(id) {
   return `/badges/${id}.webp`;
@@ -606,6 +609,239 @@ function BadgeImg({ animal, tier, size, src }) {
   );
 }
 
+// Tarjeta de un amigo en la pantalla "Amigos": insignia de la semana en curso
+// (si ya entrenó 2+ días) y las insignias que eligió destacar. No se muestra
+// el conteo de días porque la insignia ya lo representa.
+const SWIPE_REVEAL = 68;
+
+function FriendCard({ friend, accent, onRemove, onSelect }) {
+  const [open, setOpen] = useState(false);
+  const [dragX, setDragX] = useState(0);
+  const [dragging, setDragging] = useState(false);
+  const startXRef = useRef(0);
+  const movedRef = useRef(false);
+
+  const currentWeekBadge = computeCurrentWeekBadge(friend.completedDays);
+  const earnedBadges = computeEarnedBadges(friend.completedDays);
+  const specialBadges = ownedSpecialBadges(friend);
+  const selectable = [
+    ...earnedBadges.map((b) => ({ id: b.weekKey, animal: b.animal, tier: b.tier })),
+    ...specialBadges,
+  ];
+  const badgeSlots = (friend.selectedBadges || []).map((id) => selectable.find((b) => b.id === id)).filter(Boolean);
+  const friendAccent = ACCENTS[friend.accentColor] || ACCENTS.coral;
+
+  function onPointerDown(e) {
+    setDragging(true);
+    movedRef.current = false;
+    startXRef.current = e.clientX;
+  }
+  function onPointerMove(e) {
+    if (!dragging) return;
+    const delta = e.clientX - startXRef.current;
+    if (Math.abs(delta) > 4) movedRef.current = true;
+    const base = open ? -SWIPE_REVEAL : 0;
+    setDragX(Math.min(0, Math.max(-SWIPE_REVEAL - 16, base + delta)));
+  }
+  function onPointerUp() {
+    if (!dragging) return;
+    setDragging(false);
+    if (!movedRef.current && open) {
+      setOpen(false);
+      setDragX(0);
+      return;
+    }
+    if (dragX <= -SWIPE_REVEAL / 2) {
+      setOpen(true);
+      setDragX(-SWIPE_REVEAL);
+    } else {
+      setOpen(false);
+      setDragX(0);
+    }
+  }
+
+  const translate = dragging ? dragX : open ? -SWIPE_REVEAL : 0;
+
+  return (
+    <div style={{ position: "relative", borderRadius: 22, overflow: "hidden", marginBottom: 14 }}>
+      <div style={{ position: "absolute", top: 0, right: 0, bottom: 0, width: SWIPE_REVEAL, background: "#a4483a", display: "flex", alignItems: "center", justifyContent: "center" }}>
+        <button
+          onClick={() => onRemove(friend)}
+          aria-label="Eliminar amigo"
+          style={{ width: "100%", height: "100%", border: "none", background: "none", color: "#fff", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}
+        >
+          <X size={19} strokeWidth={2.5} />
+        </button>
+      </div>
+      <div
+        onPointerDown={onPointerDown}
+        onPointerMove={onPointerMove}
+        onPointerUp={onPointerUp}
+        onPointerLeave={() => dragging && onPointerUp()}
+        style={{
+          position: "relative",
+          transform: `translateX(${translate}px)`,
+          transition: dragging ? "none" : "transform 0.2s ease",
+          border: "1px solid #2c2924",
+          background: "#1a1917",
+          padding: "16px 18px",
+          touchAction: "pan-y",
+        }}
+      >
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 12, minWidth: 0 }}>
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                onSelect(friend);
+              }}
+              aria-label={`Ver detalle de ${friend.displayName || friend.username}`}
+              style={{
+                width: 42,
+                height: 42,
+                borderRadius: "50%",
+                border: "none",
+                padding: 0,
+                cursor: "pointer",
+                background: `linear-gradient(145deg, ${friendAccent.from} 0%, ${friendAccent.to} 100%)`,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                flexShrink: 0,
+                fontWeight: 800,
+                fontSize: 16,
+                color: friendAccent.text,
+              }}
+            >
+              {(friend.displayName || friend.username || "?")[0].toUpperCase()}
+            </button>
+            <div style={{ minWidth: 0 }}>
+              <div style={{ fontSize: 16, fontWeight: 700, color: "#f2ede6" }}>{friend.displayName || friend.username}</div>
+              <div style={{ fontSize: 12.5, color: "#6e6a65", marginTop: 2 }}>@{friend.username}</div>
+            </div>
+          </div>
+          <div style={{ flexShrink: 0 }}>
+            <BadgeImg animal={currentWeekBadge?.animal} tier={currentWeekBadge?.tier} size={54} />
+          </div>
+        </div>
+
+        <div style={{ height: 1, background: "#2a2824", margin: "14px 0 12px" }} />
+
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+          <span style={{ fontSize: 12, color: "#8a8580", fontWeight: 600 }}>Insignias destacadas</span>
+          {badgeSlots.length === 0 ? (
+            <span style={{ fontSize: 12, color: "#6e6a65" }}>Aún ninguna</span>
+          ) : (
+            <span style={{ display: "flex", gap: 8 }}>
+              {badgeSlots.map((b, i) => (
+                <BadgeImg key={i} animal={b.animal} tier={b.tier} src={b.src} size={54} />
+              ))}
+            </span>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// Vista ampliada de un amigo: se abre al tocar su avatar en la tarjeta.
+// Muestra la insignia de la semana y las destacadas en grande (mismo tamaño
+// entre ellas), para poder verlas bien sin tener que entrecerrar los ojos.
+const FRIEND_DETAIL_BADGE_SIZE = 110;
+
+function FriendDetailOverlay({ friend, accent, onClose }) {
+  const currentWeekBadge = computeCurrentWeekBadge(friend.completedDays);
+  const earnedBadges = computeEarnedBadges(friend.completedDays);
+  const specialBadges = ownedSpecialBadges(friend);
+  const selectable = [
+    ...earnedBadges.map((b) => ({ id: b.weekKey, animal: b.animal, tier: b.tier })),
+    ...specialBadges,
+  ];
+  const badgeSlots = (friend.selectedBadges || []).map((id) => selectable.find((b) => b.id === id)).filter(Boolean);
+  const friendAccent = ACCENTS[friend.accentColor] || ACCENTS.coral;
+
+  return (
+    <div
+      style={{
+        position: "absolute",
+        inset: 0,
+        background: "rgba(15,14,13,0.94)",
+        display: "flex",
+        flexDirection: "column",
+        alignItems: "center",
+        justifyContent: "center",
+        gap: 18,
+        padding: "0 20px",
+        zIndex: 50,
+      }}
+    >
+      <button onClick={onClose} style={{ position: "absolute", top: 18, right: 18, background: "none", border: "none", color: "#8a8580", cursor: "pointer" }}>
+        <X size={22} />
+      </button>
+
+      <div
+        style={{
+          width: 72,
+          height: 72,
+          borderRadius: "50%",
+          background: `linear-gradient(145deg, ${friendAccent.from} 0%, ${friendAccent.to} 100%)`,
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          fontWeight: 800,
+          fontSize: 26,
+          color: friendAccent.text,
+        }}
+      >
+        {(friend.displayName || friend.username || "?")[0].toUpperCase()}
+      </div>
+
+      <div style={{ textAlign: "center", marginTop: -6 }}>
+        <div style={{ fontSize: 19, fontWeight: 700, color: "#f2ede6" }}>{friend.displayName || friend.username}</div>
+        <div style={{ fontSize: 13, color: "#6e6a65", marginTop: 2 }}>@{friend.username}</div>
+      </div>
+
+      <BadgeImg animal={currentWeekBadge?.animal} tier={currentWeekBadge?.tier} size={FRIEND_DETAIL_BADGE_SIZE} />
+
+      {badgeSlots.length > 0 && (
+        <div style={{ display: "flex", gap: 16, justifyContent: "center", flexWrap: "wrap" }}>
+          {badgeSlots.map((b, i) => (
+            <BadgeImg key={i} animal={b.animal} tier={b.tier} src={b.src} size={FRIEND_DETAIL_BADGE_SIZE} />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Una fila de solicitud de amistad, reutilizada en la vista corta y en "Ver todas".
+function FriendRequestRow({ req, accent, onAccept, onReject }) {
+  return (
+    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, borderRadius: 16, border: "1px solid #2c2924", background: "#1a1917", padding: "12px 14px", marginBottom: 10 }}>
+      <div style={{ minWidth: 0 }}>
+        <div style={{ fontSize: 14.5, fontWeight: 700, color: "#f2ede6" }}>{req.fromDisplayName}</div>
+        <div style={{ fontSize: 12, color: "#8a8580" }}>@{req.fromUsername}</div>
+      </div>
+      <div style={{ display: "flex", gap: 8, flexShrink: 0 }}>
+        <button
+          onClick={() => onReject(req)}
+          aria-label="Rechazar"
+          style={{ width: 34, height: 34, borderRadius: "50%", border: "1px solid #33312e", background: "#141311", color: "#a39d95", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}
+        >
+          <X size={16} />
+        </button>
+        <button
+          onClick={() => onAccept(req)}
+          aria-label="Aceptar"
+          style={{ width: 34, height: 34, borderRadius: "50%", border: "none", background: accent.solid, color: accent.text, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}
+        >
+          <Check size={16} strokeWidth={2.5} />
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function BadgeCelebrationOverlay({ animal, tier, onClose }) {
   const [stage, setStage] = useState(0); // 0: entrando, 1: badge visible, 2: texto visible
   useEffect(() => {
@@ -957,6 +1193,17 @@ export default function App() {
   const [shareCode, setShareCode] = useState(null);
   const [sharing, setSharing] = useState(false);
 
+  const [friendsList, setFriendsList] = useState([]);
+  const [selectedFriend, setSelectedFriend] = useState(null);
+  const [friendRequests, setFriendRequests] = useState([]);
+  const [friendsLoading, setFriendsLoading] = useState(false);
+  const [friendSearchQuery, setFriendSearchQuery] = useState("");
+  const [friendSearchResult, setFriendSearchResult] = useState(null);
+  const [friendSearchError, setFriendSearchError] = useState("");
+  const [friendSearchLoading, setFriendSearchLoading] = useState(false);
+  const [allFriendRequestsOpen, setAllFriendRequestsOpen] = useState(false);
+  const [friendRequestsOpen, setFriendRequestsOpen] = useState(false);
+
   const [loginForm, setLoginForm] = useState({ username: "", password: "" });
   const [registerForm, setRegisterForm] = useState({ email: "", username: "", password: "", confirm: "" });
   const [recoverForm, setRecoverForm] = useState({ username: "" });
@@ -972,6 +1219,7 @@ export default function App() {
         const user = { uid: fbUser.uid, email: fbUser.email, username: profile.username, accentColor: profile.accentColor || "coral", displayName: profile.displayName || profile.username, selectedBadges: profile.selectedBadges || [], specialBadges: profile.specialBadges || [] };
         setCurrentUser(user);
         await loadRutina(user);
+        loadFriendRequests(user); // no bloquea el ingreso, solo alimenta el puntito de "Amigos"
         setScreen((s) => (s === "login" || s === "register" ? "home" : s));
       }
       setLoading(false);
@@ -1062,6 +1310,153 @@ export default function App() {
     const completedSet = new Set();
     completedDaysSnap.docs.forEach((d) => completedSet.add(d.id));
     setCompletedDays(completedSet);
+  }
+
+  // ---------- amigos ----------
+  // Solicitudes pendientes que ME llegaron (viven en mi propio documento, en
+  // users/{miUid}/friendRequests/{uidDeQuienLaEnvió}).
+  async function loadFriendRequests(user) {
+    const snap = await getDocs(collection(db, "users", user.uid, "friendRequests"));
+    setFriendRequests(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
+  }
+
+  // Trae la lista de amigos ya aceptados y, para cada uno, sus días entrenados
+  // (para calcular su insignia de la semana) y su perfil (nombre, insignias
+  // destacadas), igual que se calcula para ti mismo en "Mis insignias".
+  async function loadFriends(user) {
+    const snap = await getDocs(collection(db, "users", user.uid, "friends"));
+    const friendIds = snap.docs.map((d) => d.id);
+    const details = await Promise.all(
+      friendIds.map(async (fid) => {
+        const [profileSnap, completedSnap] = await Promise.all([
+          getDoc(doc(db, "users", fid)),
+          getDocs(collection(db, "users", fid, "completedDays")),
+        ]);
+        const profile = profileSnap.exists() ? profileSnap.data() : {};
+        const completedSet = new Set();
+        completedSnap.docs.forEach((d) => completedSet.add(d.id));
+        return {
+          uid: fid,
+          username: profile.username || "usuario",
+          displayName: profile.displayName || profile.username || "Usuario",
+          accentColor: profile.accentColor || "coral",
+          selectedBadges: profile.selectedBadges || [],
+          specialBadges: profile.specialBadges || [],
+          completedDays: completedSet,
+        };
+      })
+    );
+    setFriendsList(details);
+  }
+
+  async function openFriendsScreen() {
+    setScreen("friends");
+    setFriendSearchQuery("");
+    setFriendSearchResult(null);
+    setFriendSearchError("");
+    setAllFriendRequestsOpen(false);
+    setFriendRequestsOpen(false);
+    setSelectedFriend(null);
+    setFriendsLoading(true);
+    await Promise.all([loadFriends(currentUser), loadFriendRequests(currentUser)]);
+    setFriendsLoading(false);
+  }
+
+  // Busca a alguien por su usuario (igual que el login) antes de dejarte enviar
+  // la solicitud, y avisa si ya son amigos o si ya hay una solicitud de por medio.
+  async function handleFriendSearch() {
+    const usernameLower = friendSearchQuery.trim().toLowerCase();
+    setFriendSearchError("");
+    setFriendSearchResult(null);
+    if (!usernameLower) return;
+    if (currentUser?.username && usernameLower === currentUser.username.toLowerCase()) {
+      return setFriendSearchError("Ese usuario eres tú.");
+    }
+    setFriendSearchLoading(true);
+    try {
+      const nameSnap = await getDoc(doc(db, "usernames", usernameLower));
+      if (!nameSnap.exists()) {
+        setFriendSearchError("No encontramos ese usuario.");
+        return;
+      }
+      const { uid: targetUid } = nameSnap.data();
+      if (friendsList.some((f) => f.uid === targetUid)) {
+        setFriendSearchError("Ya son amigos.");
+        return;
+      }
+      const [outgoingSnap, incomingSnap, profileSnap] = await Promise.all([
+        getDoc(doc(db, "users", targetUid, "friendRequests", currentUser.uid)),
+        getDoc(doc(db, "users", currentUser.uid, "friendRequests", targetUid)),
+        getDoc(doc(db, "users", targetUid)),
+      ]);
+      if (outgoingSnap.exists()) {
+        setFriendSearchError("Ya le enviaste una solicitud.");
+        return;
+      }
+      if (incomingSnap.exists()) {
+        setFriendSearchError("Ese usuario ya te envió una solicitud, acéptala abajo.");
+        return;
+      }
+      const profile = profileSnap.exists() ? profileSnap.data() : {};
+      setFriendSearchResult({
+        uid: targetUid,
+        username: profile.username || usernameLower,
+        displayName: profile.displayName || profile.username || usernameLower,
+      });
+    } catch (e) {
+      setFriendSearchError("No se pudo buscar. Intenta de nuevo.");
+    } finally {
+      setFriendSearchLoading(false);
+    }
+  }
+
+  async function sendFriendRequest(target) {
+    await setDoc(doc(db, "users", target.uid, "friendRequests", currentUser.uid), {
+      fromUid: currentUser.uid,
+      fromUsername: currentUser.username,
+      fromDisplayName: currentUser.displayName || currentUser.username,
+      createdAt: Date.now(),
+    });
+    setFriendSearchResult(null);
+    setFriendSearchQuery("");
+    flashSuccess("Solicitud enviada");
+  }
+
+  // Al aceptar, cada uno queda guardado en la subcolección "friends" del otro,
+  // así ambos se ven mutuamente en su lista sin pasos extra.
+  async function acceptFriendRequest(req) {
+    await Promise.all([
+      setDoc(doc(db, "users", currentUser.uid, "friends", req.fromUid), {
+        uid: req.fromUid,
+        username: req.fromUsername,
+        displayName: req.fromDisplayName,
+        since: Date.now(),
+      }),
+      setDoc(doc(db, "users", req.fromUid, "friends", currentUser.uid), {
+        uid: currentUser.uid,
+        username: currentUser.username,
+        displayName: currentUser.displayName || currentUser.username,
+        since: Date.now(),
+      }),
+      deleteDoc(doc(db, "users", currentUser.uid, "friendRequests", req.fromUid)),
+    ]);
+    setFriendRequests((prev) => prev.filter((r) => r.id !== req.id));
+    await loadFriends(currentUser);
+  }
+
+  async function rejectFriendRequest(req) {
+    await deleteDoc(doc(db, "users", currentUser.uid, "friendRequests", req.fromUid));
+    setFriendRequests((prev) => prev.filter((r) => r.id !== req.id));
+  }
+
+  // Elimina la amistad en ambos sentidos (de tu lista y de la suya).
+  async function removeFriend(friend) {
+    await Promise.all([
+      deleteDoc(doc(db, "users", currentUser.uid, "friends", friend.uid)),
+      deleteDoc(doc(db, "users", friend.uid, "friends", currentUser.uid)),
+    ]);
+    setFriendsList((prev) => prev.filter((f) => f.uid !== friend.uid));
+    flashSuccess("Amigo eliminado");
   }
 
   // ---------- auth ----------
@@ -1953,7 +2348,7 @@ export default function App() {
           style={{
             position: "relative",
             borderRadius: 28,
-            padding: "30px 26px",
+            padding: "34px 26px 38px",
             marginBottom: 22,
             background: `linear-gradient(145deg, ${accent.from} 0%, ${accent.to} 100%)`,
             overflow: "hidden",
@@ -1982,7 +2377,7 @@ export default function App() {
             }}
           />
           <div style={{ position: "relative" }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 28 }}>
               <div
                 style={{
                   width: 34,
@@ -2029,6 +2424,42 @@ export default function App() {
               </span>
             </button>
           </div>
+
+          <button
+            onClick={openFriendsScreen}
+            aria-label="Amigos"
+            style={{
+              position: "absolute",
+              top: 26,
+              right: 16,
+              width: 32,
+              height: 32,
+              borderRadius: "50%",
+              border: "none",
+              background: "rgba(255,255,255,0.16)",
+              color: accent.text,
+              cursor: "pointer",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+            }}
+          >
+            <Users size={15} />
+            {friendRequests.length > 0 && (
+              <span
+                style={{
+                  position: "absolute",
+                  top: -3,
+                  right: -3,
+                  width: 14,
+                  height: 14,
+                  borderRadius: "50%",
+                  background: accent.solid,
+                  border: "2px solid " + accent.from,
+                }}
+              />
+            )}
+          </button>
         </div>
 
         <button
@@ -2866,6 +3297,152 @@ export default function App() {
                 </button>
               );
             })}
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  // ---------- AMIGOS ----------
+  if (screen === "friends") {
+    return (
+      <div style={shell}>
+        {success && <SuccessOverlay message={success} />}
+        {selectedFriend && <FriendDetailOverlay friend={selectedFriend} accent={accent} onClose={() => setSelectedFriend(null)} />}
+        <TopBar title="Amigos" onBack={() => setScreen("home")} />
+
+        <div style={{ display: "flex", gap: 8, marginBottom: 10 }}>
+          <div style={{ flex: 1, display: "flex", alignItems: "center", gap: 8, padding: "12px 14px", borderRadius: 14, border: "1px solid #35322e", background: "#1a1917" }}>
+            <Search size={15} color="#6e6a65" />
+            <input
+              value={friendSearchQuery}
+              onChange={(e) => {
+                setFriendSearchQuery(e.target.value);
+                setFriendSearchError("");
+                setFriendSearchResult(null);
+              }}
+              onKeyDown={(e) => e.key === "Enter" && handleFriendSearch()}
+              placeholder="Buscar amigos"
+              style={{ flex: 1, minWidth: 0, background: "transparent", border: "none", outline: "none", color: "#f2ede6", fontSize: 14.5 }}
+            />
+          </div>
+          <button
+            onClick={handleFriendSearch}
+            disabled={friendSearchLoading}
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 6,
+              padding: "0 16px",
+              borderRadius: 14,
+              border: "none",
+              background: accent.solid,
+              color: accent.text,
+              fontWeight: 600,
+              fontSize: 13.5,
+              cursor: friendSearchLoading ? "default" : "pointer",
+              opacity: friendSearchLoading ? 0.7 : 1,
+            }}
+          >
+            <UserPlus size={15} /> Buscar
+          </button>
+        </div>
+
+        {friendSearchError && <div style={{ color: "#e0725e", fontSize: 13, marginBottom: 14 }}>{friendSearchError}</div>}
+
+        {friendSearchResult && (
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, borderRadius: 16, border: "1px solid #2c2924", background: "#1a1917", padding: "12px 14px", marginBottom: 18 }}>
+            <div style={{ minWidth: 0 }}>
+              <div style={{ fontSize: 14.5, fontWeight: 700, color: "#f2ede6" }}>{friendSearchResult.displayName}</div>
+              <div style={{ fontSize: 12, color: "#8a8580" }}>@{friendSearchResult.username}</div>
+            </div>
+            <button
+              onClick={() => sendFriendRequest(friendSearchResult)}
+              style={{ flexShrink: 0, border: "none", borderRadius: 12, background: accent.solid, color: accent.text, fontSize: 13, fontWeight: 600, padding: "9px 14px", cursor: "pointer" }}
+            >
+              Enviar solicitud
+            </button>
+          </div>
+        )}
+
+        {friendRequests.length > 0 && (
+          <>
+            <button
+              onClick={() => setFriendRequestsOpen((v) => !v)}
+              style={{ width: "100%", display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 2px", marginBottom: friendRequestsOpen ? 10 : 16, background: "none", border: "none", cursor: "pointer" }}
+            >
+              <span style={{ fontSize: 12, color: "#8a8580", fontWeight: 700, letterSpacing: 0.4 }}>
+                SOLICITUDES ({friendRequests.length})
+              </span>
+              {friendRequestsOpen ? <ChevronUp size={15} color="#8a8580" /> : <ChevronDown size={15} color="#8a8580" />}
+            </button>
+            {friendRequestsOpen && (
+              <>
+                {friendRequests.slice(0, 3).map((req) => (
+                  <FriendRequestRow key={req.id} req={req} accent={accent} onAccept={acceptFriendRequest} onReject={rejectFriendRequest} />
+                ))}
+                {friendRequests.length > 3 && (
+                  <button
+                    onClick={() => setAllFriendRequestsOpen(true)}
+                    style={{ width: "100%", padding: "10px 0", marginBottom: 10, background: "none", border: "none", color: accent.solid, fontSize: 12.5, fontWeight: 600, cursor: "pointer" }}
+                  >
+                    Ver todas ({friendRequests.length})
+                  </button>
+                )}
+                <div style={{ height: 8 }} />
+              </>
+            )}
+          </>
+        )}
+
+        <div style={{ fontSize: 12, color: "#8a8580", fontWeight: 700, letterSpacing: 0.4, marginBottom: 10 }}>TUS AMIGOS</div>
+
+        {friendsLoading ? (
+          <div style={{ color: "#8a8580", fontSize: 13.5 }}>Cargando...</div>
+        ) : friendsList.length === 0 ? (
+          <div style={{ border: "1px dashed #33312e", borderRadius: 16, padding: "28px 16px", textAlign: "center", color: "#8a8580", fontSize: 13.5 }}>
+            Todavía no tienes amigos agregados. Búscalos por su usuario arriba.
+          </div>
+        ) : (
+          friendsList.map((f) => <FriendCard key={f.uid} friend={f} accent={accent} onRemove={removeFriend} onSelect={setSelectedFriend} />)
+        )}
+
+        {allFriendRequestsOpen && (
+          <div
+            style={{
+              position: "fixed",
+              inset: 0,
+              background: "rgba(15,14,13,0.96)",
+              zIndex: 50,
+              display: "flex",
+              flexDirection: "column",
+              padding: "28px 20px 40px",
+              boxSizing: "border-box",
+            }}
+          >
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 18, flexShrink: 0 }}>
+              <span style={{ fontSize: 16, fontWeight: 600 }}>Todas las solicitudes</span>
+              <button onClick={() => setAllFriendRequestsOpen(false)} style={{ background: "none", border: "none", color: "#8a8580", cursor: "pointer" }}>
+                <X size={22} />
+              </button>
+            </div>
+            <div style={{ overflowY: "auto" }}>
+              {friendRequests.map((req) => (
+                <FriendRequestRow
+                  key={req.id}
+                  req={req}
+                  accent={accent}
+                  onAccept={(r) => {
+                    acceptFriendRequest(r);
+                    if (friendRequests.length <= 1) setAllFriendRequestsOpen(false);
+                  }}
+                  onReject={(r) => {
+                    rejectFriendRequest(r);
+                    if (friendRequests.length <= 1) setAllFriendRequestsOpen(false);
+                  }}
+                />
+              ))}
+            </div>
           </div>
         )}
       </div>
