@@ -789,10 +789,6 @@ function FriendDetailOverlay({ friend, accent, onClose }) {
         zIndex: 50,
       }}
     >
-      <button onClick={onClose} style={{ position: "absolute", top: 18, right: 18, background: "none", border: "none", color: "#8a8580", cursor: "pointer" }}>
-        <X size={22} />
-      </button>
-
       <div
         style={{
           width: 72,
@@ -824,6 +820,26 @@ function FriendDetailOverlay({ friend, accent, onClose }) {
           ))}
         </div>
       )}
+
+      <button
+        onClick={onClose}
+        aria-label="Cerrar"
+        style={{
+          marginTop: 6,
+          width: 44,
+          height: 44,
+          borderRadius: "50%",
+          border: "1px solid #33312e",
+          background: "#1f1e1c",
+          color: "#c9c4bd",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          cursor: "pointer",
+        }}
+      >
+        <X size={20} />
+      </button>
     </div>
   );
 }
@@ -879,10 +895,6 @@ function BadgeCelebrationOverlay({ animal, tier, onClose }) {
         padding: "0 24px",
       }}
     >
-      <button onClick={onClose} style={{ position: "absolute", top: 18, right: 18, background: "none", border: "none", color: "#8a8580", cursor: "pointer" }}>
-        <X size={22} />
-      </button>
-
       <div
         style={{
           width: 132,
@@ -944,9 +956,6 @@ function ExercisePhotoOverlay({ name, src, onClose }) {
         boxSizing: "border-box",
       }}
     >
-      <button onClick={onClose} style={{ position: "absolute", top: 18, right: 18, background: "none", border: "none", color: "#8a8580", cursor: "pointer" }}>
-        <X size={22} />
-      </button>
       {failed ? (
         <div style={{ width: "100%", maxWidth: 320, aspectRatio: "1", borderRadius: 18, border: "1px solid #2a2824", background: "#1a1917", display: "flex", alignItems: "center", justifyContent: "center", color: "#6e6a65", fontSize: 13, textAlign: "center", padding: 20, boxSizing: "border-box" }}>
           Todavía no subiste la foto de este ejercicio
@@ -960,6 +969,26 @@ function ExercisePhotoOverlay({ name, src, onClose }) {
         />
       )}
       <div style={{ color: "#f2ede6", fontSize: 16, fontWeight: 500, textAlign: "center" }}>{name}</div>
+
+      <button
+        onClick={onClose}
+        aria-label="Cerrar"
+        style={{
+          marginTop: 4,
+          width: 44,
+          height: 44,
+          borderRadius: "50%",
+          border: "1px solid #33312e",
+          background: "#1f1e1c",
+          color: "#c9c4bd",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          cursor: "pointer",
+        }}
+      >
+        <X size={20} />
+      </button>
     </div>
   );
 }
@@ -983,10 +1012,6 @@ function RestTimerOverlay({ accent, presetIndex, onPickPreset, secondsLeft, runn
         zIndex: 50,
       }}
     >
-      <button onClick={onClose} style={{ position: "absolute", top: 18, right: 18, background: "none", border: "none", color: "#8a8580", cursor: "pointer" }}>
-        <X size={22} />
-      </button>
-
       <div style={{ display: "flex", gap: 8 }}>
         {REST_PRESETS.map((p, i) => (
           <button
@@ -1042,6 +1067,25 @@ function RestTimerOverlay({ accent, presetIndex, onPickPreset, secondsLeft, runn
           {running ? <Pause size={24} /> : <Play size={24} />}
         </button>
       </div>
+
+      <button
+        onClick={onClose}
+        aria-label="Cerrar"
+        style={{
+          width: 44,
+          height: 44,
+          borderRadius: "50%",
+          border: "1px solid #33312e",
+          background: "#1f1e1c",
+          color: "#c9c4bd",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          cursor: "pointer",
+        }}
+      >
+        <X size={20} />
+      </button>
     </div>
   );
 }
@@ -1061,9 +1105,6 @@ function Calc1RMOverlay({ accent, weight, reps, onWeightChange, onRepsChange, on
         zIndex: 50,
       }}
     >
-      <button onClick={onClose} style={{ position: "absolute", top: 18, right: 18, background: "none", border: "none", color: "#8a8580", cursor: "pointer" }}>
-        <X size={22} />
-      </button>
       <div style={{ fontSize: 15, fontWeight: 600, marginBottom: 18 }}>Calculadora de 1RM</div>
 
       <label style={{ display: "block", marginBottom: 14 }}>
@@ -1092,6 +1133,27 @@ function Calc1RMOverlay({ accent, weight, reps, onWeightChange, onRepsChange, on
         <div style={{ fontSize: 26, fontWeight: 800, color: est ? accent.solid : "#5c5851" }}>{est ? `${est.toFixed(1)} kg` : "—"}</div>
       </div>
       <div style={{ fontSize: 11, color: "#6e6a65", marginTop: 10, textAlign: "center" }}>Fórmula de Epley: estimado, no un máximo real.</div>
+
+      <button
+        onClick={onClose}
+        aria-label="Cerrar"
+        style={{
+          marginTop: 20,
+          alignSelf: "center",
+          width: 44,
+          height: 44,
+          borderRadius: "50%",
+          border: "1px solid #33312e",
+          background: "#1f1e1c",
+          color: "#c9c4bd",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          cursor: "pointer",
+        }}
+      >
+        <X size={20} />
+      </button>
     </div>
   );
 }
@@ -1196,6 +1258,8 @@ export default function App() {
   const [openSavedId, setOpenSavedId] = useState(null);
   const [showWeekSummary, setShowWeekSummary] = useState(false);
   const [showCalendar, setShowCalendar] = useState(false);
+  const summaryButtonRef = useRef(null);
+  const calendarButtonRef = useRef(null);
   const [completedDays, setCompletedDays] = useState(new Set());
   const [newBadgeCelebration, setNewBadgeCelebration] = useState(null); // { animal, tier } o null
   const [renamingSavedId, setRenamingSavedId] = useState(null);
@@ -1257,6 +1321,20 @@ export default function App() {
     }
     return () => clearInterval(restIntervalRef.current);
   }, [restRunning]);
+
+  // Cierra los paneles desplegables ("Ver últimas actualizaciones", "Resumen",
+  // "Calendario") al salir de la pantalla donde viven, para que no sigan
+  // abiertos si el usuario se va a otra sección y vuelve.
+  useEffect(() => {
+    if (screen !== "home") {
+      setUpdatesOpen(false);
+      setAllUpdatesOpen(false);
+    }
+    if (screen !== "days") {
+      setShowWeekSummary(false);
+      setShowCalendar(false);
+    }
+  }, [screen]);
 
   function openExercisePhoto(ex) {
     setPhotoExercise(ex);
@@ -2587,11 +2665,8 @@ export default function App() {
               boxSizing: "border-box",
             }}
           >
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 18, flexShrink: 0 }}>
+            <div style={{ marginBottom: 18, flexShrink: 0 }}>
               <span style={{ fontSize: 16, fontWeight: 600 }}>Todas las actualizaciones</span>
-              <button onClick={() => setAllUpdatesOpen(false)} style={{ background: "none", border: "none", color: "#8a8580", cursor: "pointer" }}>
-                <X size={22} />
-              </button>
             </div>
             <div style={{ overflowY: "auto", border: "1px solid #2a2824", borderRadius: 16 }}>
               {UPDATES.map((u, i) => (
@@ -2603,6 +2678,26 @@ export default function App() {
                   </div>
                 </div>
               ))}
+            </div>
+            <div style={{ display: "flex", justifyContent: "center", paddingTop: 16, flexShrink: 0 }}>
+              <button
+                onClick={() => setAllUpdatesOpen(false)}
+                aria-label="Cerrar"
+                style={{
+                  width: 44,
+                  height: 44,
+                  borderRadius: "50%",
+                  border: "1px solid #33312e",
+                  background: "#1f1e1c",
+                  color: "#c9c4bd",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  cursor: "pointer",
+                }}
+              >
+                <X size={20} />
+              </button>
             </div>
           </div>
         )}
@@ -2681,7 +2776,18 @@ export default function App() {
               <div style={{ display: "flex", gap: 8, justifyContent: "center" }}>
                 {rows.length > 0 && (
                   <button
-                    onClick={() => setShowWeekSummary((v) => !v)}
+                    ref={summaryButtonRef}
+                    onClick={() => {
+                      setShowWeekSummary((v) => {
+                        const next = !v;
+                        if (next) {
+                          setTimeout(() => {
+                            summaryButtonRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+                          }, 60);
+                        }
+                        return next;
+                      });
+                    }}
                     style={{
                       display: "flex",
                       alignItems: "center",
@@ -2701,7 +2807,18 @@ export default function App() {
                   </button>
                 )}
                 <button
-                  onClick={() => setShowCalendar((v) => !v)}
+                  ref={calendarButtonRef}
+                  onClick={() => {
+                    setShowCalendar((v) => {
+                      const next = !v;
+                      if (next) {
+                        setTimeout(() => {
+                          calendarButtonRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+                        }, 60);
+                      }
+                      return next;
+                    });
+                  }}
                   style={{
                     display: "flex",
                     alignItems: "center",
@@ -3434,11 +3551,8 @@ export default function App() {
               boxSizing: "border-box",
             }}
           >
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 18, flexShrink: 0 }}>
+            <div style={{ marginBottom: 18, flexShrink: 0 }}>
               <span style={{ fontSize: 16, fontWeight: 600 }}>Todas las solicitudes</span>
-              <button onClick={() => setAllFriendRequestsOpen(false)} style={{ background: "none", border: "none", color: "#8a8580", cursor: "pointer" }}>
-                <X size={22} />
-              </button>
             </div>
             <div style={{ overflowY: "auto" }}>
               {friendRequests.map((req) => (
@@ -3456,6 +3570,26 @@ export default function App() {
                   }}
                 />
               ))}
+            </div>
+            <div style={{ display: "flex", justifyContent: "center", paddingTop: 16, flexShrink: 0 }}>
+              <button
+                onClick={() => setAllFriendRequestsOpen(false)}
+                aria-label="Cerrar"
+                style={{
+                  width: 44,
+                  height: 44,
+                  borderRadius: "50%",
+                  border: "1px solid #33312e",
+                  background: "#1f1e1c",
+                  color: "#c9c4bd",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  cursor: "pointer",
+                }}
+              >
+                <X size={20} />
+              </button>
             </div>
           </div>
         )}
