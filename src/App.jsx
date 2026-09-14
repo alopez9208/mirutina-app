@@ -720,9 +720,16 @@ function FriendCard({ friend, accent, onRemove, onSelect }) {
               <div style={{ fontSize: 12.5, color: "#6e6a65", marginTop: 2 }}>@{friend.username}</div>
             </div>
           </div>
-          <div style={{ flexShrink: 0 }}>
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              onSelect(friend);
+            }}
+            aria-label={`Ver detalle de ${friend.displayName || friend.username}`}
+            style={{ flexShrink: 0, background: "none", border: "none", padding: 0, cursor: "pointer" }}
+          >
             <BadgeImg animal={currentWeekBadge?.animal} tier={currentWeekBadge?.tier} size={54} />
-          </div>
+          </button>
         </div>
 
         <div style={{ height: 1, background: "#2a2824", margin: "14px 0 12px" }} />
@@ -732,11 +739,18 @@ function FriendCard({ friend, accent, onRemove, onSelect }) {
           {badgeSlots.length === 0 ? (
             <span style={{ fontSize: 12, color: "#6e6a65" }}>Aún ninguna</span>
           ) : (
-            <span style={{ display: "flex", gap: 8 }}>
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                onSelect(friend);
+              }}
+              aria-label={`Ver detalle de ${friend.displayName || friend.username}`}
+              style={{ display: "flex", gap: 8, background: "none", border: "none", padding: 0, cursor: "pointer" }}
+            >
               {badgeSlots.map((b, i) => (
                 <BadgeImg key={i} animal={b.animal} tier={b.tier} src={b.src} size={54} />
               ))}
-            </span>
+            </button>
           )}
         </div>
       </div>
