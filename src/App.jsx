@@ -293,6 +293,40 @@ CATEGORIES.forEach((cat) => {
   });
 });
 
+// ---------- Calorías gastadas (gasto energético estimado) ----------
+// Todo esto es una ESTIMACIÓN, no un cálculo médico exacto: usa fórmulas
+// estándar (Mifflin-St Jeor + METs típicos) a partir de datos básicos del
+// usuario. Sirve para tener una referencia de déficit/superávit, no para
+// sustituir a un profesional.
+//
+// Metabolismo basal (BMR) con Mifflin-St Jeor, y un factor fijo de actividad
+// "sedentaria" (1.2) para el gasto base del día — el extra de entrenar se
+// suma aparte, solo si el día está marcado como día de ejercicio.
+const BASE_ACTIVITY_FACTOR = 1.2;
+function hasCalorieProfile(user) {
+  return !!(user && user.edad && user.sexo && user.estaturaCm && user.pesoCorporalKg);
+}
+function calcBMR({ pesoKg, estaturaCm, edad, sexo }) {
+  const base = 10 * Number(pesoKg) + 6.25 * Number(estaturaCm) - 5 * Number(edad);
+  return Math.round(sexo === "F" ? base - 161 : base + 5);
+}
+// Estima las kcal quemadas en el entrenamiento del día a partir del plan de
+// ejercicios de ese día (series, y si el ejercicio es cardio o de fuerza),
+// usando METs típicos y un estimado de minutos por serie (trabajo + descanso).
+function estimateWorkoutKcal(pesoKg, plan, exercisesMap) {
+  let kcal = 0;
+  (plan || []).forEach((p) => {
+    const catKey = FIXED_EXERCISE_CATEGORY[p.exerciseId] || exercisesMap[p.exerciseId]?.category || "otro";
+    const isCardio = catKey === "cardio";
+    const sets = Number(p.sets) || 3;
+    const met = isCardio ? 7 : 5; // MET aproximado: cardio moderado vs. entrenamiento de fuerza
+    const minPerSet = isCardio ? 6 : 3.5; // minutos estimados por serie, incluyendo descanso
+    const minutos = sets * minPerSet;
+    kcal += ((met * 3.5 * Number(pesoKg)) / 200) * minutos;
+  });
+  return Math.round(kcal);
+}
+
 // ---------- buscador avanzado de ejercicios: equipo y tipo de movimiento ----------
 // Quita tildes y pasa a minúsculas, para que buscar "biceps" también encuentre
 // "Bíceps" sin importar mayúsculas ni acentos.
@@ -1019,14 +1053,113 @@ function CalorieMealCard({ meal, data, isOpen, onToggle, onTextChange, onKcalCha
   );
 }
 
+// Tarjeta de "Calorías gastadas hoy" en la pantalla de Calorías. Si falta el
+// perfil (edad/peso/sexo/estatura) muestra el formulario para cargarlo; si ya
+// está, muestra el gasto estimado (basal + ejercicio si el día está marcado)
+// y lo compara contra lo consumido para decir si hay déficit o superávit.
+function CalorieExpenditureCard({
+  user,
+  consumedKcal,
+  isTrainingDay,
+  workoutKcal,
+  editing,
+  form,
+  onChangeForm,
+  onStartEdit,
+  onSave,
+  onCancel,
+  error,
+}) {
+  const accent = CURRENT_ACCENT;
+  const profileComplete = hasCalorieProfile(user);
+
+  if (editing || !profileComplete) {
+    return (
+      <div style={{ borderRadius: 18, border: "1px solid #2c2924", background: "#1f1e1c", padding: "16px", marginBottom: 20 }}>
+        <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 3 }}>Calorías gastadas hoy</div>
+        <div style={{ fontSize: 12.5, color: "#8a8580", marginBottom: 14, lineHeight: 1.4 }}>
+          Con tu edad, peso, sexo y estatura calculo un estimado de tu gasto energético diario (no es exacto, es una referencia).
+        </div>
+        <div style={{ display: "flex", gap: 8 }}>
+          <div style={{ flex: 1 }}>
+            <Field label="Edad" type="number" min="10" max="100" inputMode="numeric" value={form.edad} onChange={(e) => onChangeForm({ edad: e.target.value })} placeholder="Ej. 28" />
+          </div>
+          <div style={{ flex: 1 }}>
+            <Field label="Peso (kg)" type="number" min="30" step="0.5" inputMode="decimal" value={form.peso} onChange={(e) => onChangeForm({ peso: e.target.value })} placeholder="Ej. 70" />
+          </div>
+        </div>
+        <div style={{ display: "flex", gap: 8 }}>
+          <div style={{ flex: 1 }}>
+            <Field label="Estatura (cm)" type="number" min="100" max="230" inputMode="numeric" value={form.estatura} onChange={(e) => onChangeForm({ estatura: e.target.value })} placeholder="Ej. 170" />
+          </div>
+          <div style={{ flex: 1 }}>
+            <SelectField
+              label="Sexo"
+              value={form.sexo}
+              onChange={(e) => onChangeForm({ sexo: e.target.value })}
+              options={[{ value: "M", label: "Hombre" }, { value: "F", label: "Mujer" }]}
+            />
+          </div>
+        </div>
+        {error && <div style={{ color: "#e0725e", fontSize: 13, marginBottom: 10 }}>{error}</div>}
+        <div style={{ display: "flex", gap: 8 }}>
+          <PrimaryButton onClick={onSave} style={{ flex: 1 }}>Guardar</PrimaryButton>
+          {profileComplete && (
+            <button
+              onClick={onCancel}
+              style={{ padding: "0 18px", borderRadius: 999, border: "1px solid #35322e", background: "transparent", color: "#a39d95", fontSize: 14, cursor: "pointer" }}
+            >
+              Cancelar
+            </button>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  const bmr = calcBMR({ pesoKg: user.pesoCorporalKg, estaturaCm: user.estaturaCm, edad: user.edad, sexo: user.sexo });
+  const basal = Math.round(bmr * BASE_ACTIVITY_FACTOR);
+  const totalGastado = basal + (isTrainingDay ? workoutKcal : 0);
+  const balance = consumedKcal - totalGastado;
+  const isDeficit = balance < -20;
+  const isSuperavit = balance > 20;
+  const balanceColor = isDeficit ? "#3ecf8e" : isSuperavit ? "#e0a92e" : "#8a8580";
+  const balanceLabel = isDeficit ? "Déficit" : isSuperavit ? "Superávit" : "Equilibrado";
+
+  return (
+    <div style={{ borderRadius: 18, border: "1px solid #2c2924", background: "#1f1e1c", padding: "16px", marginBottom: 20 }}>
+      <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", marginBottom: 12 }}>
+        <div style={{ fontSize: 15, fontWeight: 700 }}>Calorías gastadas hoy</div>
+        <button onClick={onStartEdit} aria-label="Editar datos" style={{ background: "none", border: "none", color: "#8a8580", cursor: "pointer", padding: 2, flexShrink: 0 }}>
+          <Pencil size={14} />
+        </button>
+      </div>
+
+      <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
+        <div style={{ flex: 1 }}>
+          <div style={{ fontSize: 22, fontWeight: 800, lineHeight: 1 }}>{totalGastado}</div>
+          <div style={{ fontSize: 11, color: "#8a8580", marginTop: 4 }}>kcal gastadas (estimado)</div>
+        </div>
+        <div style={{ width: 1, background: "#2c2924" }} />
+        <div style={{ flex: 1, textAlign: "right" }}>
+          <div style={{ fontSize: 22, fontWeight: 800, lineHeight: 1, color: balanceColor }}>{balance > 0 ? "+" : ""}{balance}</div>
+          <div style={{ fontSize: 11, color: "#8a8580", marginTop: 4 }}>{balanceLabel} de kcal</div>
+        </div>
+      </div>
+
+      <div style={{ fontSize: 11.5, color: "#6e6a65", lineHeight: 1.5 }}>
+        Basal + reposo: {basal} kcal
+        {isTrainingDay ? ` · Ejercicio de hoy: +${workoutKcal} kcal` : " · Hoy no está marcado como día de ejercicio"}
+      </div>
+    </div>
+  );
+}
+
 // Calendario desplegable de días completados. Maneja su propio mes en pantalla;
 // completedDays (Set de "YYYY-MM-DD") y onToggleDay vienen de <App>.
-// Color fijo para el día marcado en el calendario: no usa el color de acento
-// del usuario (que ya se usa en el botón "Marcar día") para que siempre
-// resalte y se distinga bien, sin importar qué acento tenga elegido.
-const MARKED_DAY_COLOR = "#3ecf8e";
-const MARKED_DAY_TEXT = "#07241a";
-
+// El día marcado se pinta con el color de acento del usuario (el mismo que
+// el botón "Marcar día de hoy"), para que todo el "día completado" se vea
+// consistente en toda la app.
 function RoutineCalendar({ completedDays, onToggleDay }) {
   const now = new Date();
   const [viewYear, setViewYear] = useState(now.getFullYear());
@@ -1113,8 +1246,8 @@ function RoutineCalendar({ completedDays, onToggleDay }) {
                 aspectRatio: "1 / 1",
                 borderRadius: 10,
                 border: isToday && !isDone ? `1.5px solid ${CURRENT_ACCENT.solid}` : "1px solid transparent",
-                background: isDone ? MARKED_DAY_COLOR : "transparent",
-                color: isDisabled ? "#4a463f" : isDone ? MARKED_DAY_TEXT : "#d7d2ca",
+                background: isDone ? CURRENT_ACCENT.solid : "transparent",
+                color: isDisabled ? "#4a463f" : isDone ? CURRENT_ACCENT.text : "#d7d2ca",
                 fontSize: 13,
                 fontWeight: isDone ? 700 : 500,
                 cursor: isDisabled ? "default" : "pointer",
@@ -1130,7 +1263,7 @@ function RoutineCalendar({ completedDays, onToggleDay }) {
       </div>
 
       <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 14, fontSize: 11.5, color: "#8a8580" }}>
-        <div style={{ width: 10, height: 10, borderRadius: 4, background: MARKED_DAY_COLOR }} />
+        <div style={{ width: 10, height: 10, borderRadius: 4, background: CURRENT_ACCENT.solid }} />
         Toca cualquier día pasado o de hoy para marcarlo o desmarcarlo
       </div>
     </div>
@@ -1866,6 +1999,11 @@ export default function App() {
   const [caloriesOpenMeal, setCaloriesOpenMeal] = useState(CALORIE_MEALS[0].key);
   const [caloriesAiUsesLeft, setCaloriesAiUsesLeft] = useState(CALORIES_AI_DAILY_LIMIT);
   const [caloriesAiLoading, setCaloriesAiLoading] = useState(false);
+  // Perfil (edad/peso/sexo/estatura) para estimar el gasto energético. Se
+  // guarda en Firestore junto con el resto del perfil del usuario.
+  const [calorieProfileForm, setCalorieProfileForm] = useState({ edad: "", sexo: "M", estatura: "", peso: "" });
+  const [calorieProfileEditing, setCalorieProfileEditing] = useState(false);
+  const [calorieProfileError, setCalorieProfileError] = useState("");
 
   // Unidad de peso (kg/lb) para las pantallas de PR y registro. Se guarda en
   // el celular (no en Firestore) para que cada quien vea lo que prefiere.
@@ -1955,7 +2093,7 @@ export default function App() {
       if (fbUser) {
         const profileSnap = await getDoc(doc(db, "users", fbUser.uid));
         const profile = profileSnap.exists() ? profileSnap.data() : { username: fbUser.email };
-        const user = { uid: fbUser.uid, email: fbUser.email, username: profile.username, accentColor: profile.accentColor || "coral", displayName: profile.displayName || profile.username, selectedBadges: profile.selectedBadges || [], specialBadges: profile.specialBadges || [] };
+        const user = { uid: fbUser.uid, email: fbUser.email, username: profile.username, accentColor: profile.accentColor || "coral", displayName: profile.displayName || profile.username, selectedBadges: profile.selectedBadges || [], specialBadges: profile.specialBadges || [], edad: profile.edad || null, sexo: profile.sexo || null, estaturaCm: profile.estaturaCm || null, pesoCorporalKg: profile.pesoCorporalKg || null };
         setCurrentUser(user);
         await loadRutina(user);
         loadFriendRequests(user); // no bloquea el ingreso, solo alimenta el puntito de "Amigos"
@@ -2046,6 +2184,35 @@ export default function App() {
 
   function updateCalorieMeal(mealKey, patch) {
     setCaloriesData((prev) => ({ ...prev, [mealKey]: { ...prev[mealKey], ...patch } }));
+  }
+
+  function openCalorieProfileEdit() {
+    setCalorieProfileForm({
+      edad: currentUser?.edad ? String(currentUser.edad) : "",
+      sexo: currentUser?.sexo || "M",
+      estatura: currentUser?.estaturaCm ? String(currentUser.estaturaCm) : "",
+      peso: currentUser?.pesoCorporalKg ? String(currentUser.pesoCorporalKg) : "",
+    });
+    setCalorieProfileError("");
+    setCalorieProfileEditing(true);
+  }
+
+  function cancelCalorieProfileEdit() {
+    setCalorieProfileError("");
+    setCalorieProfileEditing(false);
+  }
+
+  async function saveCalorieProfile() {
+    const { edad, sexo, estatura, peso } = calorieProfileForm;
+    if (!edad || !estatura || !peso) {
+      setCalorieProfileError("Completa edad, peso y estatura.");
+      return;
+    }
+    const patch = { edad: Number(edad), sexo, estaturaCm: Number(estatura), pesoCorporalKg: Number(peso) };
+    setCurrentUser((prev) => ({ ...prev, ...patch }));
+    setCalorieProfileError("");
+    setCalorieProfileEditing(false);
+    await setDoc(doc(db, "users", currentUser.uid), patch, { merge: true });
   }
 
   function handleCaloriePhoto(mealKey, e) {
@@ -3518,6 +3685,10 @@ export default function App() {
     }));
     const pendingForIA = CALORIE_MEALS.filter((m) => mealHasContent(caloriesData[m.key]) && caloriesData[m.key].kcal === "");
     const anyContent = CALORIE_MEALS.some((m) => mealHasAnything(caloriesData[m.key]));
+    const isTrainingDay = completedDays.has(todayISO());
+    const todayPlan = getDay(todayDayKey()).plan || [];
+    const workoutKcal =
+      isTrainingDay && hasCalorieProfile(currentUser) ? estimateWorkoutKcal(currentUser.pesoCorporalKg, todayPlan, exercisesMap) : 0;
     return (
       <div style={shell}>
         {success && <SuccessOverlay message={success} />}
@@ -3576,6 +3747,20 @@ export default function App() {
             </div>
           ))}
         </div>
+
+        <CalorieExpenditureCard
+          user={currentUser}
+          consumedKcal={totalKcal}
+          isTrainingDay={isTrainingDay}
+          workoutKcal={workoutKcal}
+          editing={calorieProfileEditing}
+          form={calorieProfileForm}
+          onChangeForm={(patch) => setCalorieProfileForm((prev) => ({ ...prev, ...patch }))}
+          onStartEdit={openCalorieProfileEdit}
+          onSave={saveCalorieProfile}
+          onCancel={cancelCalorieProfileEdit}
+          error={calorieProfileError}
+        />
 
         {CALORIE_MEALS.map((m) => (
           <CalorieMealCard
@@ -4317,10 +4502,10 @@ export default function App() {
                       padding: "13px 18px",
                       borderRadius: 999,
                       border: "none",
-                      // Color fijo (igual al del calendario), no el acento del usuario,
-                      // para que siempre resalte frente al botón "Marcar día de hoy".
-                      background: MARKED_DAY_COLOR,
-                      color: MARKED_DAY_TEXT,
+                      // Mismo color de acento que el calendario y que el botón
+                      // "Marcar día de hoy", para que se vea consistente.
+                      background: accent.solid,
+                      color: accent.text,
                       fontSize: 14.5,
                       fontWeight: 700,
                     }}
