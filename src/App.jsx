@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from "react";
-import { Dumbbell, Plus, ChevronRight, ChevronLeft, ArrowLeft, Check, X, Eye, EyeOff, Trophy, Trash2, Star, Pencil, Share2, FolderClock, Download, Save, Copy, Sparkles, ChevronDown, ChevronUp, Timer, Play, Pause, RotateCcw, Calculator, Calendar as CalendarIcon, Medal, Users, UserPlus, Search, GripVertical } from "lucide-react";
+import { Dumbbell, Plus, ChevronRight, ChevronLeft, ArrowLeft, Check, X, Eye, EyeOff, Trophy, Trash2, Star, Pencil, Share2, FolderClock, Download, Save, Copy, Sparkles, ChevronDown, ChevronUp, Timer, Play, Pause, RotateCcw, Calculator, Calendar as CalendarIcon, Medal, Users, UserPlus, Search, GripVertical, Info } from "lucide-react";
 import { auth, db } from "./firebase";
 import {
   createUserWithEmailAndPassword,
@@ -51,7 +51,20 @@ const CALORIE_MEALS = [
   { key: "cena", label: "Cena" },
   { key: "otras", label: "Otras comidas" },
 ];
-const CALORIES_AI_DAILY_LIMIT = 2;
+const CALORIES_AI_DAILY_LIMIT = 20;
+// Tope realista de kcal para una sola comida. Sin esto, cualquiera puede
+// escribir a mano un número absurdo (ej. -50000) en el campo de Kcal y
+// romper el cálculo de "Calorías gastadas hoy" (déficit/superávit y la
+// proyección semanal). sanitizeKcalInput() se usa en updateCalorieMeal()
+// para limpiar y limitar lo que se escribe ANTES de guardarlo en el estado.
+const MEAL_KCAL_MAX = 3000;
+function sanitizeKcalInput(raw) {
+  if (raw === "" || raw === null || raw === undefined) return "";
+  const digitsOnly = String(raw).replace(/[^0-9]/g, ""); // quita el signo "-", decimales, letras, etc.
+  if (digitsOnly === "") return "";
+  const n = Math.min(Number(digitsOnly), MEAL_KCAL_MAX);
+  return String(n);
+}
 // Igual que en apps de nutrición conocidas: carbohidratos en naranja, grasas en
 // azul, proteínas en verde. Por ahora se llenan a mano (o con el botón demo de
 // IA); cuando haya un backend real, el mismo esquema de campos sirve para lo
@@ -848,7 +861,7 @@ function DashedButton({ children, onClick }) {
 // Tarjeta de una comida en la pantalla de Calorías. Se resalta con el color de
 // acento (como el día de hoy en el calendario) en cuanto tiene texto, foto o
 // kcal, y se mantiene resaltada aunque se abra otra comida.
-function CalorieMealCard({ meal, data, isOpen, onToggle, onTextChange, onKcalChange, onMacroChange, onPickPhoto, onRemovePhoto }) {
+function CalorieMealCard({ meal, data, isOpen, onToggle, onTextChange, onKcalChange, onMacroChange, onPickPhoto, onRemovePhoto, onCalcularIA, aiAvailable, aiLoading }) {
   const accent = CURRENT_ACCENT;
   const hasContent = mealHasAnything(data);
   const score = mealNutritionScore(data);
@@ -983,6 +996,7 @@ function CalorieMealCard({ meal, data, isOpen, onToggle, onTextChange, onKcalCha
             <input
               type="number"
               min="0"
+              max={MEAL_KCAL_MAX}
               inputMode="numeric"
               value={data.kcal}
               onChange={(e) => onKcalChange(e.target.value)}
@@ -1000,6 +1014,34 @@ function CalorieMealCard({ meal, data, isOpen, onToggle, onTextChange, onKcalCha
               }}
             />
           </label>
+
+          {(() => {
+            const disabled = !mealHasContent(data) || data.kcal !== "" || !aiAvailable || aiLoading;
+            return (
+              <button
+                onClick={onCalcularIA}
+                disabled={disabled}
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: 6,
+                  padding: "9px 14px",
+                  borderRadius: 999,
+                  border: "none",
+                  background: disabled ? "#332e29" : accent.solid,
+                  color: disabled ? "#8a8580" : accent.text,
+                  fontSize: 12.5,
+                  fontWeight: 700,
+                  cursor: disabled ? "default" : "pointer",
+                  opacity: aiLoading ? 0.7 : 1,
+                  marginBottom: 12,
+                }}
+              >
+                <Calculator size={13} />
+                {aiLoading ? "Calculando..." : "Calcular con IA"}
+              </button>
+            );
+          })()}
 
           <div style={{ display: "flex", gap: 8 }}>
             {MACRO_FIELDS.map((mf) => (
@@ -1060,6 +1102,7 @@ function CalorieMealCard({ meal, data, isOpen, onToggle, onTextChange, onKcalCha
 function CalorieExpenditureCard({
   user,
   consumedKcal,
+  hasLoggedKcal,
   isTrainingDay,
   workoutKcal,
   editing,
@@ -1068,6 +1111,7 @@ function CalorieExpenditureCard({
   onStartEdit,
   onSave,
   onCancel,
+  onInfo,
   error,
 }) {
   const accent = CURRENT_ACCENT;
@@ -1125,6 +1169,17 @@ function CalorieExpenditureCard({
   const isSuperavit = balance > 20;
   const balanceColor = isDeficit ? "#3ecf8e" : isSuperavit ? "#e0a92e" : "#8a8580";
   const balanceLabel = isDeficit ? "Déficit" : isSuperavit ? "Superávit" : "Equilibrado";
+  // Conversión clásica: ~7700 kcal equivalen a 1 kg de grasa. Es solo para dar
+  // una idea de "a este ritmo, cuánto cambiarías" SI mantuvieras este mismo
+  // balance todos los días — no es que un solo día ya te cambie el peso.
+  const weeklyChangeKgRaw = Math.round(((Math.abs(balance) * 7) / 7700) * 10) / 10;
+  // Tope de la proyección: por más que el balance del día dé un número enorme
+  // (varias comidas cargadas cerca del máximo, por ejemplo), nunca mostramos
+  // una cifra semanal fuera de lo fisiológicamente realista. Por encima del
+  // tope se muestra "más de X kg" en vez del número exacto.
+  const WEEKLY_CHANGE_CAP_KG = 2;
+  const weeklyChangeExceedsCap = weeklyChangeKgRaw > WEEKLY_CHANGE_CAP_KG;
+  const weeklyChangeKg = weeklyChangeExceedsCap ? WEEKLY_CHANGE_CAP_KG : weeklyChangeKgRaw;
 
   return (
     <div style={{ borderRadius: 18, border: "1px solid #2c2924", background: "#1f1e1c", padding: "16px", marginBottom: 20 }}>
@@ -1142,15 +1197,46 @@ function CalorieExpenditureCard({
         </div>
         <div style={{ width: 1, background: "#2c2924" }} />
         <div style={{ flex: 1, textAlign: "right" }}>
-          <div style={{ fontSize: 22, fontWeight: 800, lineHeight: 1, color: balanceColor }}>{balance > 0 ? "+" : ""}{balance}</div>
-          <div style={{ fontSize: 11, color: "#8a8580", marginTop: 4 }}>{balanceLabel} de kcal</div>
+          {hasLoggedKcal ? (
+            <>
+              <div style={{ fontSize: 22, fontWeight: 800, lineHeight: 1, color: balanceColor }}>{balance > 0 ? "+" : ""}{balance}</div>
+              <div style={{ fontSize: 11, color: "#8a8580", marginTop: 4 }}>{balanceLabel} de kcal</div>
+            </>
+          ) : (
+            <>
+              <div style={{ fontSize: 22, fontWeight: 800, lineHeight: 1, color: "#5c5851" }}>—</div>
+              <div style={{ fontSize: 11, color: "#8a8580", marginTop: 4 }}>Aún sin comidas</div>
+            </>
+          )}
         </div>
+      </div>
+
+      <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 4 }}>
+        <button
+          onClick={onInfo}
+          aria-label="Qué significa esto"
+          style={{ width: 18, height: 18, borderRadius: "50%", border: "1px solid #5c5851", background: "none", color: "#8a8580", cursor: "pointer", padding: 0, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}
+        >
+          <Info size={11} />
+        </button>
       </div>
 
       <div style={{ fontSize: 11.5, color: "#6e6a65", lineHeight: 1.5 }}>
         Basal + reposo: {basal} kcal
         {isTrainingDay ? ` · Ejercicio de hoy: +${workoutKcal} kcal` : " · Hoy no está marcado como día de ejercicio"}
       </div>
+
+      {!hasLoggedKcal && (
+        <div style={{ fontSize: 11.5, color: "#6e6a65", lineHeight: 1.5, marginTop: 8 }}>
+          Registra al menos una comida para ver tu déficit o superávit de hoy.
+        </div>
+      )}
+
+      {hasLoggedKcal && (isDeficit || isSuperavit) && weeklyChangeKgRaw > 0 && (
+        <div style={{ fontSize: 11.5, color: balanceColor, lineHeight: 1.5, marginTop: 8 }}>
+          Si mantuvieras este ritmo todos los días, serían {weeklyChangeExceedsCap ? `más de ${WEEKLY_CHANGE_CAP_KG}` : `~${weeklyChangeKg}`} kg {isDeficit ? "menos" : "más"} por semana (estimado).
+        </div>
+      )}
     </div>
   );
 }
@@ -1896,6 +1982,87 @@ function Calc1RMOverlay({ accent, weight, reps, onWeightChange, onRepsChange, on
   );
 }
 
+// Ventana de "¿Qué es esto?" para la tarjeta de Calorías gastadas: explica
+// gasto basal, déficit, superávit y equilibrado en términos sencillos.
+function CalorieInfoOverlay({ accent, onClose }) {
+  const items = [
+    {
+      title: "Basal + reposo",
+      color: "#8a8580",
+      text: "Es una estimación de las kcal que tu cuerpo quema solo por estar vivo y hacer tus actividades normales del día (sin contar entrenar).",
+    },
+    {
+      title: "Ejercicio",
+      color: accent.solid,
+      text: "Se suma aparte, solo si marcaste el día como día de ejercicio, usando el plan de esa rutina para estimar cuánto quemaste entrenando.",
+    },
+    {
+      title: "Déficit",
+      color: "#3ecf8e",
+      text: "Consumiste menos kcal de las que gastaste en el día. Es lo que normalmente se busca para bajar de peso. Un déficit muy grande y sostenido (por ejemplo -800 o más, todos los días) no siempre es sano ni sostenible; lo típico recomendado suele rondar 300-500 kcal diarias.",
+    },
+    {
+      title: "Superávit",
+      color: "#e0a92e",
+      text: "Consumiste más kcal de las que gastaste. Es lo que normalmente se busca para ganar peso o masa muscular. Mientras más grande sea el número (por ejemplo +500 en vez de +100), más rápido subirías de peso si mantienes ese ritmo todos los días — como referencia, cada ~7700 kcal de superávit acumulado equivalen a 1 kg de más.",
+    },
+    {
+      title: "Equilibrado",
+      color: "#8a8580",
+      text: "Lo que consumiste y lo que gastaste están casi iguales, sin déficit ni superávit notorio.",
+    },
+  ];
+  return (
+    <div
+      style={{
+        position: "absolute",
+        inset: 0,
+        background: "rgba(15,14,13,0.92)",
+        display: "flex",
+        flexDirection: "column",
+        justifyContent: "center",
+        padding: "0 26px",
+        zIndex: 50,
+      }}
+    >
+      <div style={{ fontSize: 15, fontWeight: 600, marginBottom: 4 }}>Calorías gastadas: ¿qué significa?</div>
+      <div style={{ fontSize: 12, color: "#8a8580", marginBottom: 18, lineHeight: 1.4 }}>
+        Es un estimado (no un cálculo médico exacto) a partir de tu edad, peso, sexo y estatura.
+      </div>
+
+      <div style={{ display: "flex", flexDirection: "column", gap: 12, maxHeight: "50vh", overflowY: "auto" }}>
+        {items.map((it) => (
+          <div key={it.title} style={{ borderRadius: 14, background: "#1f1e1c", border: "1px solid #2a2824", padding: "12px 14px" }}>
+            <div style={{ fontSize: 13.5, fontWeight: 700, color: it.color, marginBottom: 4 }}>{it.title}</div>
+            <div style={{ fontSize: 12.5, color: "#c9c4bd", lineHeight: 1.45 }}>{it.text}</div>
+          </div>
+        ))}
+      </div>
+
+      <button
+        onClick={onClose}
+        aria-label="Cerrar"
+        style={{
+          marginTop: 20,
+          alignSelf: "center",
+          width: 44,
+          height: 44,
+          borderRadius: "50%",
+          border: "1px solid #33312e",
+          background: "#1f1e1c",
+          color: "#c9c4bd",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          cursor: "pointer",
+        }}
+      >
+        <X size={20} />
+      </button>
+    </div>
+  );
+}
+
 function SuccessOverlay({ message }) {
   return (
     <div style={{ position: "absolute", inset: 0, background: "rgba(15,14,13,0.88)", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 14, zIndex: 50, animation: "fadeIn 0.18s ease-out" }}>
@@ -2004,6 +2171,7 @@ export default function App() {
   const [calorieProfileForm, setCalorieProfileForm] = useState({ edad: "", sexo: "M", estatura: "", peso: "" });
   const [calorieProfileEditing, setCalorieProfileEditing] = useState(false);
   const [calorieProfileError, setCalorieProfileError] = useState("");
+  const [calorieInfoOpen, setCalorieInfoOpen] = useState(false);
 
   // Unidad de peso (kg/lb) para las pantallas de PR y registro. Se guarda en
   // el celular (no en Firestore) para que cada quien vea lo que prefiere.
@@ -2133,6 +2301,9 @@ export default function App() {
       setShowWeekSummary(false);
       setShowCalendar(false);
     }
+    if (screen !== "calories") {
+      setCalorieInfoOpen(false);
+    }
   }, [screen]);
 
   function openExercisePhoto(ex) {
@@ -2183,7 +2354,8 @@ export default function App() {
   }, [screen, caloriesDay]);
 
   function updateCalorieMeal(mealKey, patch) {
-    setCaloriesData((prev) => ({ ...prev, [mealKey]: { ...prev[mealKey], ...patch } }));
+    const cleanPatch = patch.kcal !== undefined ? { ...patch, kcal: sanitizeKcalInput(patch.kcal) } : patch;
+    setCaloriesData((prev) => ({ ...prev, [mealKey]: { ...prev[mealKey], ...cleanPatch } }));
   }
 
   function openCalorieProfileEdit() {
@@ -2234,10 +2406,14 @@ export default function App() {
   // Simulado: en la app real esto llama a un backend (Firebase Functions u otro)
   // que recibe texto/foto y consulta un modelo con visión (Gemini/Claude) para
   // estimar las kcal. Aquí solo se resta el uso y se llena con un estimado de
-  // ejemplo, para probar el límite de 2 veces al día.
-  function handleCaloriesCalcularIA() {
+  // ejemplo, para probar el límite diario. Si se pasa mealKey, solo calcula esa
+  // comida (botón "Calcular con IA" dentro de cada comida); si no, calcula todas
+  // las pendientes (botón general de abajo).
+  function handleCaloriesCalcularIA(mealKey) {
     if (caloriesAiUsesLeft <= 0 || caloriesAiLoading) return;
-    const pending = CALORIE_MEALS.filter((m) => mealHasContent(caloriesData[m.key]) && caloriesData[m.key].kcal === "");
+    const pending = CALORIE_MEALS.filter(
+      (m) => (!mealKey || m.key === mealKey) && mealHasContent(caloriesData[m.key]) && caloriesData[m.key].kcal === ""
+    );
     if (pending.length === 0) return;
     setCaloriesAiLoading(true);
     setTimeout(() => {
@@ -3685,6 +3861,11 @@ export default function App() {
     }));
     const pendingForIA = CALORIE_MEALS.filter((m) => mealHasContent(caloriesData[m.key]) && caloriesData[m.key].kcal === "");
     const anyContent = CALORIE_MEALS.some((m) => mealHasAnything(caloriesData[m.key]));
+    // Si todavía no se cargó ninguna kcal, totalKcal da 0 — pero eso NO significa
+    // que la persona comió 0 kcal hoy, solo que aún no registró nada. Sin esta
+    // bandera, "Calorías gastadas hoy" interpretaría ese 0 como un déficit real
+    // (básicamente el gasto basal completo) apenas se entra a la pantalla.
+    const hasLoggedKcal = CALORIE_MEALS.some((m) => caloriesData[m.key]?.kcal !== "");
     const isTrainingDay = completedDays.has(todayISO());
     const todayPlan = getDay(todayDayKey()).plan || [];
     const workoutKcal =
@@ -3748,9 +3929,14 @@ export default function App() {
           ))}
         </div>
 
+        <div style={{ fontSize: 11.5, color: "#6e6a65", lineHeight: 1.4, marginBottom: 20, marginTop: -8 }}>
+          Nota: el botón "Calcular con IA" es una simulación por ahora, no son datos reales.
+        </div>
+
         <CalorieExpenditureCard
           user={currentUser}
           consumedKcal={totalKcal}
+          hasLoggedKcal={hasLoggedKcal}
           isTrainingDay={isTrainingDay}
           workoutKcal={workoutKcal}
           editing={calorieProfileEditing}
@@ -3759,8 +3945,11 @@ export default function App() {
           onStartEdit={openCalorieProfileEdit}
           onSave={saveCalorieProfile}
           onCancel={cancelCalorieProfileEdit}
+          onInfo={() => setCalorieInfoOpen(true)}
           error={calorieProfileError}
         />
+
+        {calorieInfoOpen && <CalorieInfoOverlay accent={accent} onClose={() => setCalorieInfoOpen(false)} />}
 
         {CALORIE_MEALS.map((m) => (
           <CalorieMealCard
@@ -3774,12 +3963,15 @@ export default function App() {
             onMacroChange={(macroKey, v) => updateCalorieMeal(m.key, { [macroKey]: v })}
             onPickPhoto={(e) => handleCaloriePhoto(m.key, e)}
             onRemovePhoto={() => updateCalorieMeal(m.key, { foto: null })}
+            onCalcularIA={() => handleCaloriesCalcularIA(m.key)}
+            aiAvailable={caloriesAiUsesLeft > 0}
+            aiLoading={caloriesAiLoading}
           />
         ))}
 
         <div style={{ marginTop: 8 }}>
           <button
-            onClick={handleCaloriesCalcularIA}
+            onClick={() => handleCaloriesCalcularIA()}
             disabled={caloriesAiUsesLeft <= 0 || pendingForIA.length === 0 || caloriesAiLoading}
             style={{
               width: "100%",
@@ -4475,7 +4667,7 @@ export default function App() {
                         <PillButton
                           starred={ex.custom}
                           onClick={() => openExercise(ex)}
-                          onDelete={() => quickDeleteExercise(ex)}
+                          onDelete={isTraining ? undefined : () => quickDeleteExercise(ex)}
                           onPhoto={!ex.custom ? () => openExercisePhoto(ex) : undefined}
                           onCheck={isTraining ? () => toggleExerciseDone(ex.exerciseId) : undefined}
                           checked={trainingCompleted.has(ex.exerciseId)}
@@ -4501,11 +4693,12 @@ export default function App() {
                       gap: 8,
                       padding: "13px 18px",
                       borderRadius: 999,
-                      border: "none",
-                      // Mismo color de acento que el calendario y que el botón
-                      // "Marcar día de hoy", para que se vea consistente.
-                      background: accent.solid,
-                      color: accent.text,
+                      border: "1px solid #33312e",
+                      // Colores normales, iguales a los de un elemento sin marcar
+                      // (no el color de acento), para que no compita visualmente
+                      // con el botón "Marcar día de hoy" antes de tocarlo.
+                      background: "#1f1e1c",
+                      color: "#f2ede6",
                       fontSize: 14.5,
                       fontWeight: 700,
                     }}
