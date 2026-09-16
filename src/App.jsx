@@ -39,6 +39,33 @@ const WEIGHT_UNIT_STORAGE_KEY = "mirutina_unidad_peso";
 // que no se pierda si recargas la página o bloqueas el celular a mitad de la rutina.
 const TRAINING_STORAGE_KEY = "mirutina_training";
 
+// ---------- Calorías del día ----------
+// A propósito NO se guarda en localStorage ni en Firestore: todo vive solo en
+// memoria mientras dura la sesión (texto, foto y kcal de cada comida), y se
+// borra por completo al tocar "Borrar" o automáticamente al cambiar de día.
+const CALORIE_MEALS = [
+  { key: "desayuno", label: "Desayuno" },
+  { key: "media_manana", label: "Media mañana" },
+  { key: "almuerzo", label: "Almuerzo" },
+  { key: "media_tarde", label: "Media tarde" },
+  { key: "cena", label: "Cena" },
+  { key: "otras", label: "Otras comidas" },
+];
+const CALORIES_AI_DAILY_LIMIT = 2;
+function emptyCaloriesData() {
+  const obj = {};
+  CALORIE_MEALS.forEach((m) => {
+    obj[m.key] = { texto: "", foto: null, kcal: "" };
+  });
+  return obj;
+}
+function mealHasContent(entry) {
+  return !!(entry && (entry.texto?.trim() || entry.foto));
+}
+function mealHasAnything(entry) {
+  return !!(entry && (entry.texto?.trim() || entry.foto || entry.kcal !== ""));
+}
+
 // Historial de cambios que se muestra en "Ver últimas actualizaciones".
 // Para agregar uno nuevo, súmalo arriba de la lista (el más reciente primero).
 const UPDATES = [
@@ -741,6 +768,151 @@ function DashedButton({ children, onClick }) {
     >
       {children}
     </button>
+  );
+}
+
+// Tarjeta de una comida en la pantalla de Calorías. Se resalta con el color de
+// acento (como el día de hoy en el calendario) en cuanto tiene texto, foto o
+// kcal, y se mantiene resaltada aunque se abra otra comida.
+function CalorieMealCard({ meal, data, isOpen, onToggle, onTextChange, onKcalChange, onPickPhoto, onRemovePhoto }) {
+  const accent = CURRENT_ACCENT;
+  const hasContent = mealHasAnything(data);
+  return (
+    <div
+      style={{
+        borderRadius: 18,
+        border: hasContent ? `1.5px solid ${accent.solid}` : "1px solid #2c2924",
+        background: hasContent ? `${accent.solid}1f` : "#1f1e1c",
+        marginBottom: 10,
+        overflow: "hidden",
+        transition: "border 0.15s ease, background 0.15s ease",
+      }}
+    >
+      <button
+        onClick={onToggle}
+        style={{
+          width: "100%",
+          display: "flex",
+          alignItems: "center",
+          gap: 10,
+          padding: "15px 16px",
+          background: "none",
+          border: "none",
+          color: "#f2ede6",
+          textAlign: "left",
+          cursor: "pointer",
+        }}
+      >
+        <span
+          style={{
+            width: 9,
+            height: 9,
+            borderRadius: "50%",
+            flexShrink: 0,
+            background: hasContent ? accent.solid : "#4a4640",
+          }}
+        />
+        <span style={{ flex: 1, fontSize: 15.5, fontWeight: 600 }}>{meal.label}</span>
+        {data.kcal !== "" && (
+          <span style={{ fontSize: 12.5, color: accent.solid, fontWeight: 700, flexShrink: 0 }}>{data.kcal} kcal</span>
+        )}
+        {isOpen ? <ChevronUp size={17} color="#8a8580" /> : <ChevronDown size={17} color="#8a8580" />}
+      </button>
+
+      {isOpen && (
+        <div style={{ padding: "0 16px 16px" }}>
+          <textarea
+            value={data.texto}
+            onChange={(e) => onTextChange(e.target.value)}
+            placeholder="Ej. arroz, pollo y ensalada"
+            rows={2}
+            style={{
+              width: "100%",
+              boxSizing: "border-box",
+              padding: "11px 12px",
+              borderRadius: 12,
+              border: "1px solid #35322e",
+              background: "#1a1917",
+              color: "#f2ede6",
+              fontSize: 14.5,
+              outline: "none",
+              resize: "none",
+              fontFamily: "inherit",
+              marginBottom: 10,
+            }}
+          />
+
+          {data.foto ? (
+            <div style={{ position: "relative", marginBottom: 10, width: 92 }}>
+              <img src={data.foto} alt={meal.label} style={{ width: 92, height: 92, borderRadius: 12, objectFit: "cover", display: "block" }} />
+              <button
+                onClick={onRemovePhoto}
+                aria-label="Quitar foto"
+                style={{
+                  position: "absolute",
+                  top: -7,
+                  right: -7,
+                  width: 22,
+                  height: 22,
+                  borderRadius: "50%",
+                  border: "none",
+                  background: "#141311",
+                  color: "#f2ede6",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  cursor: "pointer",
+                }}
+              >
+                <X size={13} />
+              </button>
+            </div>
+          ) : (
+            <label
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 6,
+                padding: "9px 14px",
+                borderRadius: 999,
+                border: "1.5px dashed #4a4640",
+                color: accent.solid,
+                fontSize: 13,
+                fontWeight: 600,
+                cursor: "pointer",
+                marginBottom: 10,
+              }}
+            >
+              <Plus size={14} /> Subir foto
+              <input type="file" accept="image/*" onChange={onPickPhoto} style={{ display: "none" }} />
+            </label>
+          )}
+
+          <label style={{ display: "block" }}>
+            <div style={{ fontSize: 11.5, color: "#a39d95", marginBottom: 5, fontWeight: 500 }}>Kcal</div>
+            <input
+              type="number"
+              min="0"
+              inputMode="numeric"
+              value={data.kcal}
+              onChange={(e) => onKcalChange(e.target.value)}
+              placeholder="Ej. 450"
+              style={{
+                width: 120,
+                boxSizing: "border-box",
+                padding: "10px 12px",
+                borderRadius: 12,
+                border: "1px solid #35322e",
+                background: "#1a1917",
+                color: "#f2ede6",
+                fontSize: 14.5,
+                outline: "none",
+              }}
+            />
+          </label>
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -1585,6 +1757,13 @@ export default function App() {
   const [calcWeight, setCalcWeight] = useState("");
   const [calcReps, setCalcReps] = useState("");
 
+  // Calorías del día: todo en memoria, nada se guarda ni se sube a ningún lado.
+  const [caloriesDay, setCaloriesDay] = useState(() => todayISO());
+  const [caloriesData, setCaloriesData] = useState(() => emptyCaloriesData());
+  const [caloriesOpenMeal, setCaloriesOpenMeal] = useState(CALORIE_MEALS[0].key);
+  const [caloriesAiUsesLeft, setCaloriesAiUsesLeft] = useState(CALORIES_AI_DAILY_LIMIT);
+  const [caloriesAiLoading, setCaloriesAiLoading] = useState(false);
+
   // Unidad de peso (kg/lb) para las pantallas de PR y registro. Se guarda en
   // el celular (no en Firestore) para que cada quien vea lo que prefiere.
   const [weightUnit, setWeightUnit] = useState(() => {
@@ -1748,6 +1927,61 @@ export default function App() {
       setSuccess(null);
       if (next) next();
     }, 1000);
+  }
+
+  // ---------- Calorías ----------
+  // Si cambió el día (medianoche, o volviste después de dormir el celular),
+  // se borra todo automáticamente — respaldo del botón "Borrar".
+  useEffect(() => {
+    const today = todayISO();
+    if (caloriesDay !== today) {
+      setCaloriesDay(today);
+      setCaloriesData(emptyCaloriesData());
+      setCaloriesAiUsesLeft(CALORIES_AI_DAILY_LIMIT);
+    }
+  }, [screen, caloriesDay]);
+
+  function updateCalorieMeal(mealKey, patch) {
+    setCaloriesData((prev) => ({ ...prev, [mealKey]: { ...prev[mealKey], ...patch } }));
+  }
+
+  function handleCaloriePhoto(mealKey, e) {
+    const file = e.target.files && e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => updateCalorieMeal(mealKey, { foto: reader.result });
+    reader.readAsDataURL(file);
+    e.target.value = "";
+  }
+
+  function handleCaloriesClear() {
+    if (!window.confirm("¿Borrar todo lo de calorías de hoy? No se guardó nada en ningún lado, así que no se puede recuperar.")) return;
+    setCaloriesData(emptyCaloriesData());
+    setCaloriesAiUsesLeft(CALORIES_AI_DAILY_LIMIT);
+    flashSuccess("Borrado");
+  }
+
+  // Simulado: en la app real esto llama a un backend (Firebase Functions u otro)
+  // que recibe texto/foto y consulta un modelo con visión (Gemini/Claude) para
+  // estimar las kcal. Aquí solo se resta el uso y se llena con un estimado de
+  // ejemplo, para probar el límite de 2 veces al día.
+  function handleCaloriesCalcularIA() {
+    if (caloriesAiUsesLeft <= 0 || caloriesAiLoading) return;
+    const pending = CALORIE_MEALS.filter((m) => mealHasContent(caloriesData[m.key]) && caloriesData[m.key].kcal === "");
+    if (pending.length === 0) return;
+    setCaloriesAiLoading(true);
+    setTimeout(() => {
+      setCaloriesData((prev) => {
+        const next = { ...prev };
+        pending.forEach((m) => {
+          const estimate = 250 + Math.round(Math.random() * 350);
+          next[m.key] = { ...next[m.key], kcal: String(estimate) };
+        });
+        return next;
+      });
+      setCaloriesAiUsesLeft((n) => Math.max(0, n - 1));
+      setCaloriesAiLoading(false);
+    }, 900);
   }
 
   async function loadRutina(user) {
@@ -2387,7 +2621,7 @@ export default function App() {
     setError("");
     const { nombre, categoria, orden, series, repeticiones } = exerciseForm;
     if (customExerciseMode && !nombre.trim()) return setError("Escribe el nombre del ejercicio.");
-    if (!orden || !series || !repeticiones) return setError("Completa orden, series y repeticiones.");
+    if (!orden || !series || !repeticiones) return setError("Completa series y repeticiones.");
     const day = getDay(currentDayKey);
     const name = customExerciseMode ? nombre.trim() : pendingExerciseName;
 
@@ -3001,6 +3235,54 @@ export default function App() {
         </button>
 
         <button
+          onClick={() => setScreen("calories")}
+          style={{
+            width: "100%",
+            display: "flex",
+            alignItems: "center",
+            gap: 14,
+            padding: "18px 20px",
+            borderRadius: 20,
+            border: "1px solid #2c2924",
+            background: "#1f1e1c",
+            color: "#f2ede6",
+            cursor: "pointer",
+            marginTop: 10,
+          }}
+        >
+          <span style={{ flex: 1, textAlign: "left", display: "flex", alignItems: "center", gap: 8 }}>
+            <span style={{ fontSize: 16.5, fontWeight: 600 }}>Calorías</span>
+            <span
+              style={{
+                fontSize: 10.5,
+                fontWeight: 700,
+                letterSpacing: 0.3,
+                color: "#a39d95",
+                background: "#2a2824",
+                borderRadius: 999,
+                padding: "3px 8px",
+              }}
+            >
+              Beta · sin IA
+            </span>
+          </span>
+          <div
+            style={{
+              width: 34,
+              height: 34,
+              borderRadius: "50%",
+              background: accent.solid,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              flexShrink: 0,
+            }}
+          >
+            <ChevronRight size={17} color={accent.text} strokeWidth={2.5} />
+          </div>
+        </button>
+
+        <button
           ref={updatesButtonRef}
           onClick={() => {
             setUpdatesOpen((v) => {
@@ -3115,6 +3397,101 @@ export default function App() {
             </div>
           </div>
         )}
+      </div>
+    );
+  }
+
+  // ---------- CALORÍAS ----------
+  if (screen === "calories") {
+    const totalKcal = CALORIE_MEALS.reduce((sum, m) => sum + (Number(caloriesData[m.key]?.kcal) || 0), 0);
+    const pendingForIA = CALORIE_MEALS.filter((m) => mealHasContent(caloriesData[m.key]) && caloriesData[m.key].kcal === "");
+    const anyContent = CALORIE_MEALS.some((m) => mealHasAnything(caloriesData[m.key]));
+    return (
+      <div style={shell}>
+        {success && <SuccessOverlay message={success} />}
+        <TopBar
+          title="Calorías"
+          onBack={() => setScreen("home")}
+          right={
+            <button
+              onClick={handleCaloriesClear}
+              disabled={!anyContent}
+              style={{
+                padding: "7px 14px",
+                borderRadius: 999,
+                border: "1px solid #3a2b26",
+                background: "transparent",
+                color: anyContent ? "#e0725e" : "#5c5851",
+                fontSize: 12.5,
+                fontWeight: 600,
+                cursor: anyContent ? "pointer" : "default",
+                display: "flex",
+                alignItems: "center",
+                gap: 5,
+                flexShrink: 0,
+              }}
+            >
+              <Trash2 size={13} /> Borrar
+            </button>
+          }
+        />
+
+        <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginBottom: 18 }}>
+          <div>
+            <div style={{ fontSize: 28, fontWeight: 800, lineHeight: 1 }}>{totalKcal}</div>
+            <div style={{ fontSize: 12, color: "#8a8580", marginTop: 4 }}>kcal registradas hoy</div>
+          </div>
+          <div style={{ fontSize: 12, color: "#8a8580" }}>
+            IA: <span style={{ color: accent.solid, fontWeight: 700 }}>{caloriesAiUsesLeft}/{CALORIES_AI_DAILY_LIMIT}</span> hoy
+          </div>
+        </div>
+
+        {CALORIE_MEALS.map((m) => (
+          <CalorieMealCard
+            key={m.key}
+            meal={m}
+            data={caloriesData[m.key]}
+            isOpen={caloriesOpenMeal === m.key}
+            onToggle={() => setCaloriesOpenMeal((v) => (v === m.key ? null : m.key))}
+            onTextChange={(v) => updateCalorieMeal(m.key, { texto: v })}
+            onKcalChange={(v) => updateCalorieMeal(m.key, { kcal: v })}
+            onPickPhoto={(e) => handleCaloriePhoto(m.key, e)}
+            onRemovePhoto={() => updateCalorieMeal(m.key, { foto: null })}
+          />
+        ))}
+
+        <div style={{ marginTop: 8 }}>
+          <button
+            onClick={handleCaloriesCalcularIA}
+            disabled={caloriesAiUsesLeft <= 0 || pendingForIA.length === 0 || caloriesAiLoading}
+            style={{
+              width: "100%",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              gap: 8,
+              padding: "14px 18px",
+              borderRadius: 999,
+              border: "none",
+              background: caloriesAiUsesLeft <= 0 || pendingForIA.length === 0 ? "#332e29" : accent.solid,
+              color: caloriesAiUsesLeft <= 0 || pendingForIA.length === 0 ? "#8a8580" : accent.text,
+              fontSize: 15.5,
+              fontWeight: 700,
+              cursor: caloriesAiUsesLeft <= 0 || pendingForIA.length === 0 || caloriesAiLoading ? "default" : "pointer",
+              opacity: caloriesAiLoading ? 0.7 : 1,
+            }}
+          >
+            <Calculator size={17} />
+            {caloriesAiLoading ? "Calculando..." : "Calcular"}
+          </button>
+          <div style={{ fontSize: 11.5, color: "#6e6a65", textAlign: "center", marginTop: 8, lineHeight: 1.4 }}>
+            {caloriesAiUsesLeft <= 0
+              ? "Ya usaste la IA las 2 veces de hoy. Puedes seguir escribiendo el kcal a mano."
+              : pendingForIA.length === 0
+              ? "Escribe o sube foto en alguna comida sin kcal para poder calcularla con IA."
+              : `Estima el kcal con IA de las comidas con texto o foto que aún no tengan kcal (demo — la app real conecta un backend con IA).`}
+          </div>
+        </div>
       </div>
     );
   }
@@ -4450,7 +4827,6 @@ export default function App() {
             />
           </>
         )}
-        <Field label="Orden en el día" type="number" min="1" value={exerciseForm.orden} onChange={(e) => setExerciseForm({ ...exerciseForm, orden: e.target.value })} placeholder="Ej. 1" />
         <Field label="Series" type="number" min="1" value={exerciseForm.series} onChange={(e) => setExerciseForm({ ...exerciseForm, series: e.target.value })} placeholder="Ej. 3" />
         <Field label="Repeticiones" type="number" min="1" value={exerciseForm.repeticiones} onChange={(e) => setExerciseForm({ ...exerciseForm, repeticiones: e.target.value })} placeholder="Ej. 10" />
         {error && <div style={{ color: "#e0725e", fontSize: 13.5, marginBottom: 12 }}>{error}</div>}
