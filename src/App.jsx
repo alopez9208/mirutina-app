@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from "react";
-import { Dumbbell, Plus, ChevronRight, ChevronLeft, ArrowLeft, Check, X, Eye, EyeOff, Trophy, Trash2, Star, Pencil, Share2, FolderClock, Download, Save, Copy, Sparkles, ChevronDown, ChevronUp, Timer, Play, Pause, RotateCcw, Calculator, Calendar as CalendarIcon, Image as ImageIcon, Medal, Users, UserPlus, Search } from "lucide-react";
+import { Dumbbell, Plus, ChevronRight, ChevronLeft, ArrowLeft, Check, X, Eye, EyeOff, Trophy, Trash2, Star, Pencil, Share2, FolderClock, Download, Save, Copy, Sparkles, ChevronDown, ChevronUp, Timer, Play, Pause, RotateCcw, Calculator, Calendar as CalendarIcon, Medal, Users, UserPlus, Search } from "lucide-react";
 import { auth, db } from "./firebase";
 import {
   createUserWithEmailAndPassword,
@@ -31,6 +31,10 @@ const ACCENTS = {
 };
 
 const ACCENT_STORAGE_KEY = "mirutina_accent";
+// Unidad en la que cada quien prefiere ver/registrar el peso. El dato de fondo
+// (records[].peso) SIEMPRE se guarda en kg; esta preferencia solo cambia cómo
+// se muestra y cómo se interpreta lo que se escribe en el campo de peso.
+const WEIGHT_UNIT_STORAGE_KEY = "mirutina_unidad_peso";
 // Guarda qué día se está entrenando y qué ejercicios ya se marcaron, para
 // que no se pierda si recargas la página o bloqueas el celular a mitad de la rutina.
 const TRAINING_STORAGE_KEY = "mirutina_training";
@@ -243,6 +247,21 @@ function prOf(ex) {
   return Math.max(...recs.map((r) => Number(r.peso) || 0));
 }
 
+// ---------- unidad de peso (kg/lb) ----------
+const KG_TO_LB = 2.20462;
+// Convierte un peso guardado en kg a la unidad que se está mostrando (kg o lb).
+function kgToUnit(kg, unit) {
+  const n = Number(kg) || 0;
+  const val = unit === "lb" ? n * KG_TO_LB : n;
+  return Math.round(val * 10) / 10;
+}
+// Convierte lo que la persona escribió (en la unidad activa) de vuelta a kg,
+// que es como se guarda siempre en Firestore.
+function unitToKg(value, unit) {
+  const n = Number(value) || 0;
+  return unit === "lb" ? n / KG_TO_LB : n;
+}
+
 function sortByFecha(arr) {
   return [...arr].sort((a, b) => (a.fecha < b.fecha ? 1 : -1));
 }
@@ -264,6 +283,71 @@ function fmtSeconds(s) {
 }
 
 // ---------- small UI atoms ----------
+// Envuelve cualquier contenido con el mismo gesto de "deslizar para borrar"
+// que ya se usa en la tarjeta de un amigo: no hay bote de basura fijo a la
+// vista, aparece al deslizar hacia la izquierda.
+const PILL_SWIPE_REVEAL = 64;
+function SwipeToDelete({ onDelete, radius, children }) {
+  const [open, setOpen] = useState(false);
+  const [dragX, setDragX] = useState(0);
+  const [dragging, setDragging] = useState(false);
+  const startXRef = useRef(0);
+  const movedRef = useRef(false);
+
+  function onPointerDown(e) {
+    setDragging(true);
+    movedRef.current = false;
+    startXRef.current = e.clientX;
+  }
+  function onPointerMove(e) {
+    if (!dragging) return;
+    const delta = e.clientX - startXRef.current;
+    if (Math.abs(delta) > 4) movedRef.current = true;
+    const base = open ? -PILL_SWIPE_REVEAL : 0;
+    setDragX(Math.min(0, Math.max(-PILL_SWIPE_REVEAL - 16, base + delta)));
+  }
+  function onPointerUp() {
+    if (!dragging) return;
+    setDragging(false);
+    if (!movedRef.current && open) {
+      setOpen(false);
+      setDragX(0);
+      return;
+    }
+    if (dragX <= -PILL_SWIPE_REVEAL / 2) {
+      setOpen(true);
+      setDragX(-PILL_SWIPE_REVEAL);
+    } else {
+      setOpen(false);
+      setDragX(0);
+    }
+  }
+  const translate = dragging ? dragX : open ? -PILL_SWIPE_REVEAL : 0;
+
+  return (
+    <div style={{ position: "relative", borderRadius: radius, overflow: "hidden" }}>
+      <div style={{ position: "absolute", top: 0, right: 0, bottom: 0, width: PILL_SWIPE_REVEAL, background: "#a4483a", display: "flex", alignItems: "center", justifyContent: "center" }}>
+        <button
+          onClick={onDelete}
+          aria-label="Eliminar"
+          style={{ width: "100%", height: "100%", border: "none", background: "none", color: "#fff", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}
+        >
+          <Trash2 size={17} />
+        </button>
+      </div>
+      <div
+        onPointerDown={onPointerDown}
+        onPointerMove={onPointerMove}
+        onPointerUp={onPointerUp}
+        onPointerLeave={() => dragging && onPointerUp()}
+        style={{ position: "relative", transform: `translateX(${translate}px)`, transition: dragging ? "none" : "transform 0.2s ease", touchAction: "pan-y" }}
+      >
+        {children}
+      </div>
+    </div>
+  );
+}
+
 function PillButton({ children, onClick, subtitle, compact, muted, starred, onEdit, onDelete, onCheck, onPhoto, checked, highlighted }) {
   const btn = (
     <button
@@ -319,13 +403,22 @@ function PillButton({ children, onClick, subtitle, compact, muted, starred, onEd
           <Check size={16} strokeWidth={3} />
         </button>
       )}
-      <div style={{ flex: 1, minWidth: 0 }}>{btn}</div>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        {onDelete ? (
+          <SwipeToDelete onDelete={onDelete} radius={compact ? 16 : 999}>
+            {btn}
+          </SwipeToDelete>
+        ) : (
+          btn
+        )}
+      </div>
       {onPhoto && (
         <button
           onClick={onPhoto}
+          aria-label="Ver foto del ejercicio"
           style={{ width: 32, flexShrink: 0, border: "none", background: "transparent", color: "#5c5851", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}
         >
-          <ImageIcon size={15} />
+          <Eye size={16} />
         </button>
       )}
       {onEdit && (
@@ -334,14 +427,6 @@ function PillButton({ children, onClick, subtitle, compact, muted, starred, onEd
           style={{ width: 32, flexShrink: 0, border: "none", background: "transparent", color: "#5c5851", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}
         >
           <Pencil size={14} />
-        </button>
-      )}
-      {onDelete && (
-        <button
-          onClick={onDelete}
-          style={{ width: 32, flexShrink: 0, border: "none", background: "transparent", color: "#5c5851", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}
-        >
-          <Trash2 size={15} />
         </button>
       )}
     </div>
@@ -560,7 +645,7 @@ function RoutineCalendar({ completedDays, onToggleDay }) {
   );
 }
 
-function TopBar({ title, onBack }) {
+function TopBar({ title, onBack, right }) {
   return (
     <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 22, minHeight: 30 }}>
       {onBack && (
@@ -568,7 +653,35 @@ function TopBar({ title, onBack }) {
           <ArrowLeft size={22} />
         </button>
       )}
-      {title && <div style={{ fontSize: 15, fontWeight: 600, color: "#c9c4bd" }}>{title}</div>}
+      {title && <div style={{ fontSize: 15, fontWeight: 600, color: "#c9c4bd", flex: 1, minWidth: 0 }}>{title}</div>}
+      {right}
+    </div>
+  );
+}
+
+// Selector kg/lb: se puede tocar en cualquier momento para cambiar cómo se
+// ve el peso en esa pantalla (PR y registro). No pregunta nada, cambia al toque.
+function UnitToggle({ unit, onChange }) {
+  return (
+    <div style={{ display: "flex", background: "#1a1917", border: "1px solid #33312e", borderRadius: 999, padding: 3, gap: 2, flexShrink: 0 }}>
+      {["kg", "lb"].map((u) => (
+        <button
+          key={u}
+          onClick={() => onChange(u)}
+          style={{
+            border: "none",
+            background: unit === u ? CURRENT_ACCENT.solid : "transparent",
+            color: unit === u ? CURRENT_ACCENT.text : "#a39d95",
+            fontSize: 12.5,
+            fontWeight: 700,
+            padding: "6px 13px",
+            borderRadius: 999,
+            cursor: "pointer",
+          }}
+        >
+          {u}
+        </button>
+      ))}
     </div>
   );
 }
@@ -1173,8 +1286,12 @@ function SuccessOverlay({ message }) {
   );
 }
 
-function NewRecordOverlay({ exerciseName, before, after }) {
-  const diff = after - before;
+function NewRecordOverlay({ exerciseName, before, after, unit = "kg" }) {
+  // "before" y "after" llegan en kg (así se guardan); se convierten aquí
+  // nada más para mostrarlos en la unidad activa.
+  const beforeDisplay = kgToUnit(before, unit);
+  const afterDisplay = kgToUnit(after, unit);
+  const diff = Math.round((afterDisplay - beforeDisplay) * 10) / 10;
   return (
     <div style={{ position: "absolute", inset: 0, background: "rgba(15,14,13,0.92)", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 6, zIndex: 50, animation: "fadeIn 0.18s ease-out", textAlign: "center", padding: "0 24px" }}>
       <div style={{ width: 84, height: 84, borderRadius: "50%", background: `${CURRENT_ACCENT.solid}22`, border: `1.5px solid ${CURRENT_ACCENT.solid}`, display: "flex", alignItems: "center", justifyContent: "center", animation: "popIn 0.4s cubic-bezier(.34,1.56,.64,1)", marginBottom: 8 }}>
@@ -1183,12 +1300,12 @@ function NewRecordOverlay({ exerciseName, before, after }) {
       <div style={{ fontSize: 20, fontWeight: 700, color: CURRENT_ACCENT.solid }}>¡Nuevo récord!</div>
       <div style={{ fontSize: 14.5, color: "#a39d95", marginBottom: 4 }}>{exerciseName}</div>
       <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
-        <span style={{ fontSize: 16, color: "#8a8580", textDecoration: "line-through" }}>{before} kg</span>
+        <span style={{ fontSize: 16, color: "#8a8580", textDecoration: "line-through" }}>{beforeDisplay} {unit}</span>
         <span style={{ color: "#6e6a65", fontSize: 15 }}>→</span>
-        <span style={{ fontSize: 26, fontWeight: 700, color: "#f2ede6" }}>{after} kg</span>
+        <span style={{ fontSize: 26, fontWeight: 700, color: "#f2ede6" }}>{afterDisplay} {unit}</span>
       </div>
       <div style={{ marginTop: 4, padding: "4px 12px", borderRadius: 999, background: `${CURRENT_ACCENT.solid}22`, color: CURRENT_ACCENT.solid, fontSize: 13, fontWeight: 700 }}>
-        +{diff} kg
+        +{diff} {unit}
       </div>
       <style>{`
         @keyframes popIn { 0% { transform: scale(0.4); opacity: 0; } 100% { transform: scale(1); opacity: 1; } }
@@ -1223,6 +1340,24 @@ export default function App() {
   const [calc1rmOpen, setCalc1rmOpen] = useState(false);
   const [calcWeight, setCalcWeight] = useState("");
   const [calcReps, setCalcReps] = useState("");
+
+  // Unidad de peso (kg/lb) para las pantallas de PR y registro. Se guarda en
+  // el celular (no en Firestore) para que cada quien vea lo que prefiere.
+  const [weightUnit, setWeightUnit] = useState(() => {
+    try {
+      return localStorage.getItem(WEIGHT_UNIT_STORAGE_KEY) === "lb" ? "lb" : "kg";
+    } catch {
+      return "kg";
+    }
+  });
+  function changeWeightUnit(u) {
+    setWeightUnit(u);
+    try {
+      localStorage.setItem(WEIGHT_UNIT_STORAGE_KEY, u);
+    } catch {
+      // localStorage no disponible — no es crítico.
+    }
+  }
 
   const [currentUser, setCurrentUser] = useState(null);
   const [rutina, setRutina] = useState({});
@@ -2080,7 +2215,7 @@ export default function App() {
     const last = sortByFecha(currentExercise.records || [])[0];
     setRecordForm({
       fecha: todayISO(),
-      peso: last ? String(last.peso) : "",
+      peso: last ? String(kgToUnit(last.peso, weightUnit)) : "",
       series: String(currentExercise.sets || (last ? last.series : "") || ""),
       repeticiones: String(currentExercise.reps || (last ? last.repeticiones : "") || ""),
     });
@@ -2090,7 +2225,7 @@ export default function App() {
   }
 
   function openEditRecord(r) {
-    setRecordForm({ fecha: r.fecha, peso: String(r.peso), series: String(r.series || ""), repeticiones: String(r.repeticiones || "") });
+    setRecordForm({ fecha: r.fecha, peso: String(kgToUnit(r.peso, weightUnit)), series: String(r.series || ""), repeticiones: String(r.repeticiones || "") });
     setEditRecordId(r.id);
     setError("");
     setScreen("addRecord");
@@ -2113,7 +2248,9 @@ export default function App() {
 
       const currentRecords = exData.records || [];
       const previousPR = currentRecords.length ? Math.max(...currentRecords.map((r) => Number(r.peso) || 0)) : null;
-      const newWeight = Number(peso);
+      // El campo "peso" se escribió en la unidad activa (kg o lb); se guarda
+      // siempre en kg, que es la unidad canónica en Firestore.
+      const newWeight = unitToKg(peso, weightUnit);
       let updatedRecords;
 
       if (editRecordId) {
@@ -2122,7 +2259,7 @@ export default function App() {
             ? {
                 ...r,
                 fecha,
-                peso: Number(peso),
+                peso: newWeight,
                 series: Number(series),
                 repeticiones: Number(repeticiones)
               }
@@ -2133,7 +2270,7 @@ export default function App() {
           {
             id: uid(),
             fecha,
-            peso: Number(peso),
+            peso: newWeight,
             series: Number(series),
             repeticiones: Number(repeticiones)
           },
@@ -3281,7 +3418,7 @@ export default function App() {
                       onPhoto={!ex.custom ? () => openExercisePhoto(ex) : undefined}
                       onCheck={isTraining ? () => toggleExerciseDone(ex.exerciseId) : undefined}
                       checked={trainingCompleted.has(ex.exerciseId)}
-                      subtitle={`${pr !== null ? `PR: ${pr} kg` : "Sin PR"} · ${ex.sets}x${ex.reps} reps`}
+                      subtitle={`${pr !== null ? `PR: ${kgToUnit(pr, weightUnit)} ${weightUnit}` : "Sin PR"} · ${ex.sets}x${ex.reps} reps`}
                     >
                       {ex.name}
                     </PillButton>
@@ -3686,15 +3823,15 @@ export default function App() {
     return (
       <div style={shell}>
         {success && <SuccessOverlay message={success} />}
-        {recordCelebration && <NewRecordOverlay {...recordCelebration} />}
-        <TopBar title={currentExercise.name} onBack={() => setScreen("dayDetail")} />
+        {recordCelebration && <NewRecordOverlay {...recordCelebration} unit={weightUnit} />}
+        <TopBar title={currentExercise.name} onBack={() => setScreen("dayDetail")} right={<UnitToggle unit={weightUnit} onChange={changeWeightUnit} />} />
 
         <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 6 }}>
           <div style={{ width: 40, height: 40, borderRadius: "50%", background: "#2a2320", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
             <Trophy size={19} color={accent.solid} />
           </div>
           <div>
-            <div style={{ fontSize: 20, fontWeight: 700 }}>{pr !== null ? `${pr} kg` : "Sin registros aún"}</div>
+            <div style={{ fontSize: 20, fontWeight: 700 }}>{pr !== null ? `${kgToUnit(pr, weightUnit)} ${weightUnit}` : "Sin registros aún"}</div>
             <div style={{ fontSize: 12, color: "#8a8580" }}>Récord personal (PR)</div>
           </div>
         </div>
@@ -3738,7 +3875,7 @@ export default function App() {
             {records.map((r) => (
               <div key={r.id} onClick={() => openEditRecord(r)} style={{ display: "flex", padding: "12px 14px", fontSize: 13.5, borderTop: "1px solid #232019", color: "#d7d2ca", cursor: "pointer" }}>
                 <div style={{ flex: 1.2 }}>{r.fecha}</div>
-                <div style={{ flex: 0.8, textAlign: "right", color: r.peso === pr ? accent.solid : "#d7d2ca", fontWeight: r.peso === pr ? 700 : 400 }}>{r.peso} kg</div>
+                <div style={{ flex: 0.8, textAlign: "right", color: r.peso === pr ? accent.solid : "#d7d2ca", fontWeight: r.peso === pr ? 700 : 400 }}>{kgToUnit(r.peso, weightUnit)} {weightUnit}</div>
                 <div style={{ flex: 1, textAlign: "right", color: "#a39d95" }}>{r.series}x{r.repeticiones}</div>
               </div>
             ))}
@@ -3781,15 +3918,15 @@ export default function App() {
     return (
       <div style={shell}>
         {success && <SuccessOverlay message={success} />}
-        {recordCelebration && <NewRecordOverlay {...recordCelebration} />}
-        <TopBar title={editRecordId ? "Editar registro" : "Nuevo registro"} onBack={() => setScreen("exerciseDetail")} />
+        {recordCelebration && <NewRecordOverlay {...recordCelebration} unit={weightUnit} />}
+        <TopBar title={editRecordId ? "Editar registro" : "Nuevo registro"} onBack={() => setScreen("exerciseDetail")} right={<UnitToggle unit={weightUnit} onChange={changeWeightUnit} />} />
         {!editRecordId && sortByFecha(currentExercise.records || [])[0] && (
           <div style={{ fontSize: 12.5, color: "#8a8580", marginTop: -10, marginBottom: 14 }}>
-            Última vez: {sortByFecha(currentExercise.records || [])[0].peso} kg · ya lo dejé precargado, ajústalo si cambió.
+            Última vez: {kgToUnit(sortByFecha(currentExercise.records || [])[0].peso, weightUnit)} {weightUnit} · ya lo dejé precargado, ajústalo si cambió.
           </div>
         )}
         <Field label="Fecha" type="date" value={recordForm.fecha} onChange={(e) => setRecordForm({ ...recordForm, fecha: e.target.value })} />
-        <Field label="Peso (kg)" type="number" min="0" step="0.5" value={recordForm.peso} onChange={(e) => setRecordForm({ ...recordForm, peso: e.target.value })} placeholder="Ej. 80" />
+        <Field label={`Peso (${weightUnit})`} type="number" min="0" step="0.5" value={recordForm.peso} onChange={(e) => setRecordForm({ ...recordForm, peso: e.target.value })} placeholder="Ej. 80" />
         <Field label="Series" type="number" min="1" value={recordForm.series} onChange={(e) => setRecordForm({ ...recordForm, series: e.target.value })} placeholder="Ej. 3" />
         <Field label="Repeticiones" type="number" min="1" value={recordForm.repeticiones} onChange={(e) => setRecordForm({ ...recordForm, repeticiones: e.target.value })} placeholder="Ej. 10" />
         {error && <div style={{ color: "#e0725e", fontSize: 13.5, marginBottom: 12 }}>{error}</div>}
