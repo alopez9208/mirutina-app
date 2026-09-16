@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from "react";
-import { Dumbbell, Plus, ChevronRight, ChevronLeft, ArrowLeft, Check, X, Eye, EyeOff, Trophy, Trash2, Star, Pencil, Share2, FolderClock, Download, Save, Copy, Sparkles, ChevronDown, ChevronUp, Timer, Play, Pause, RotateCcw, Calculator, Calendar as CalendarIcon, Medal, Users, UserPlus, Search } from "lucide-react";
+import { Dumbbell, Plus, ChevronRight, ChevronLeft, ArrowLeft, Check, X, Eye, EyeOff, Trophy, Trash2, Star, Pencil, Share2, FolderClock, Download, Save, Copy, Sparkles, ChevronDown, ChevronUp, Timer, Play, Pause, RotateCcw, Calculator, Calendar as CalendarIcon, Medal, Users, UserPlus, Search, GripVertical } from "lucide-react";
 import { auth, db } from "./firebase";
 import {
   createUserWithEmailAndPassword,
@@ -226,6 +226,124 @@ CATEGORIES.forEach((cat) => {
   });
 });
 
+// ---------- buscador avanzado de ejercicios: equipo y tipo de movimiento ----------
+// Quita tildes y pasa a minúsculas, para que buscar "biceps" también encuentre
+// "Bíceps" sin importar mayúsculas ni acentos.
+function normalizeText(str) {
+  return (str || "")
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "");
+}
+
+const EQUIPMENT_OPTIONS = [
+  { key: "barra", label: "Barra" },
+  { key: "mancuernas", label: "Mancuernas" },
+  { key: "maquina", label: "Máquina" },
+  { key: "polea", label: "Polea" },
+  { key: "peso_corporal", label: "Peso corporal" },
+];
+
+const MOVEMENT_OPTIONS = [
+  { key: "compuesto", label: "Compuesto" },
+  { key: "aislamiento", label: "Aislamiento" },
+  { key: "cardio", label: "Cardio" },
+];
+
+// Equipo y tipo de cada ejercicio fijo del catálogo, para poder filtrar el
+// buscador. Los ejercicios personalizados no tienen esta info (el usuario no
+// la define), así que igual se encuentran por nombre o por músculo, pero no
+// aparecen si se filtra por equipo o tipo de movimiento.
+const EXERCISE_META_BY_NAME = {
+  "Press plano con barra": { equipo: "barra", tipo: "compuesto" },
+  "Press plano con mancuernas": { equipo: "mancuernas", tipo: "compuesto" },
+  "Press inclinado con barra": { equipo: "barra", tipo: "compuesto" },
+  "Press inclinado con mancuernas": { equipo: "mancuernas", tipo: "compuesto" },
+  "Press en máquina": { equipo: "maquina", tipo: "compuesto" },
+  "Aperturas": { equipo: "mancuernas", tipo: "aislamiento" },
+  "Cruce de poleas": { equipo: "polea", tipo: "aislamiento" },
+  "Fondos en paralelas": { equipo: "peso_corporal", tipo: "compuesto" },
+
+  "Peso muerto espalda": { equipo: "barra", tipo: "compuesto" },
+  "Dominadas": { equipo: "peso_corporal", tipo: "compuesto" },
+  "Jalón al pecho": { equipo: "polea", tipo: "compuesto" },
+  "Remo con barra": { equipo: "barra", tipo: "compuesto" },
+  "Remo con mancuerna": { equipo: "mancuernas", tipo: "compuesto" },
+  "Pullover en polea": { equipo: "polea", tipo: "aislamiento" },
+  "Hiperextensiones": { equipo: "peso_corporal", tipo: "aislamiento" },
+
+  "Curl con barra": { equipo: "barra", tipo: "aislamiento" },
+  "Curl con mancuernas": { equipo: "mancuernas", tipo: "aislamiento" },
+  "Curl martillo": { equipo: "mancuernas", tipo: "aislamiento" },
+  "Curl predicador": { equipo: "barra", tipo: "aislamiento" },
+  "Curl concentrado": { equipo: "mancuernas", tipo: "aislamiento" },
+  "Curl en máquina": { equipo: "maquina", tipo: "aislamiento" },
+
+  "Press cerrado": { equipo: "barra", tipo: "compuesto" },
+  "Fondos para tríceps": { equipo: "peso_corporal", tipo: "compuesto" },
+  "Extensión de tríceps en polea": { equipo: "polea", tipo: "aislamiento" },
+  "Press francés": { equipo: "barra", tipo: "aislamiento" },
+  "Patada de tríceps": { equipo: "mancuernas", tipo: "aislamiento" },
+
+  "Press militar con barra": { equipo: "barra", tipo: "compuesto" },
+  "Press militar con mancuernas": { equipo: "mancuernas", tipo: "compuesto" },
+  "Press Arnold": { equipo: "mancuernas", tipo: "compuesto" },
+  "Elevaciones laterales": { equipo: "mancuernas", tipo: "aislamiento" },
+  "Elevaciones frontales": { equipo: "mancuernas", tipo: "aislamiento" },
+  "Pájaros (posterior)": { equipo: "mancuernas", tipo: "aislamiento" },
+  "Face pull en polea": { equipo: "polea", tipo: "aislamiento" },
+
+  "Sentadilla libre": { equipo: "barra", tipo: "compuesto" },
+  "Sentadilla Hack": { equipo: "maquina", tipo: "compuesto" },
+  "Sentadilla Smith": { equipo: "maquina", tipo: "compuesto" },
+  "Prensa": { equipo: "maquina", tipo: "compuesto" },
+  "Extensión de piernas": { equipo: "maquina", tipo: "aislamiento" },
+  "Sentadilla frontal": { equipo: "barra", tipo: "compuesto" },
+  "Zancadas": { equipo: "mancuernas", tipo: "compuesto" },
+  "Búlgara": { equipo: "mancuernas", tipo: "compuesto" },
+
+  "Peso muerto": { equipo: "barra", tipo: "compuesto" },
+  "Curl femoral sentado": { equipo: "maquina", tipo: "aislamiento" },
+  "Curl femoral acostado": { equipo: "maquina", tipo: "aislamiento" },
+  "Curl femoral de pie": { equipo: "maquina", tipo: "aislamiento" },
+
+  "Hip Thrust": { equipo: "barra", tipo: "compuesto" },
+  "Patada de glúteo en polea": { equipo: "polea", tipo: "aislamiento" },
+  "Adducción": { equipo: "maquina", tipo: "aislamiento" },
+  "Abducción": { equipo: "maquina", tipo: "aislamiento" },
+  "Sentadilla profunda": { equipo: "barra", tipo: "compuesto" },
+
+  "Crunch": { equipo: "peso_corporal", tipo: "aislamiento" },
+  "Elevación de piernas": { equipo: "peso_corporal", tipo: "aislamiento" },
+  "Plancha": { equipo: "peso_corporal", tipo: "aislamiento" },
+  "Abdominales en polea": { equipo: "polea", tipo: "aislamiento" },
+  "Rueda abdominal": { equipo: "peso_corporal", tipo: "compuesto" },
+  "Crunch en máquina": { equipo: "maquina", tipo: "aislamiento" },
+
+  "Elevación de talones de pie": { equipo: "maquina", tipo: "aislamiento" },
+  "Elevación de talones sentado": { equipo: "maquina", tipo: "aislamiento" },
+  "Elevación de talones en prensa": { equipo: "maquina", tipo: "aislamiento" },
+
+  "Curl de muñeca": { equipo: "mancuernas", tipo: "aislamiento" },
+  "Curl de muñeca inverso": { equipo: "mancuernas", tipo: "aislamiento" },
+  "Farmer walk": { equipo: "mancuernas", tipo: "compuesto" },
+
+  "Cinta": { equipo: "maquina", tipo: "cardio" },
+  "Bicicleta estática": { equipo: "maquina", tipo: "cardio" },
+  "Elíptica": { equipo: "maquina", tipo: "cardio" },
+  "Remo": { equipo: "maquina", tipo: "cardio" },
+  "Escaladora": { equipo: "maquina", tipo: "cardio" },
+  "Saltar la cuerda": { equipo: "peso_corporal", tipo: "cardio" },
+};
+
+const FIXED_EXERCISE_META = {};
+CATEGORIES.forEach((cat) => {
+  cat.exercises.forEach((name) => {
+    const meta = EXERCISE_META_BY_NAME[name];
+    if (meta) FIXED_EXERCISE_META["fx-" + slugify(name)] = meta;
+  });
+});
+
 // Ruta de la foto de un ejercicio del catálogo (fx-...). Los personalizados
 // (cx-...) nunca tienen foto, así que ni se llama a esta función para ellos.
 // El nombre del archivo debe ser el mismo slug que ya usamos para el
@@ -348,6 +466,75 @@ function SwipeToDelete({ onDelete, radius, children }) {
   );
 }
 
+// Lista con arrastrar-y-soltar (pointer events, funciona con dedo o mouse).
+// Cada elemento se mueve visualmente mientras se arrastra desde su "handle";
+// al cruzar la mitad de otro elemento, intercambian de lugar en el arreglo.
+// onReorder recibe el arreglo ya reordenado (no guarda nada por sí sola).
+function ReorderableList({ items, renderItem, onReorder }) {
+  const itemRefs = useRef([]);
+  const [dragIndex, setDragIndex] = useState(null);
+  const [dragY, setDragY] = useState(0);
+  const startYRef = useRef(0);
+  const itemHeightRef = useRef(60);
+
+  function onHandlePointerDown(e, index) {
+    e.preventDefault();
+    startYRef.current = e.clientY;
+    setDragY(0);
+    setDragIndex(index);
+    const el = itemRefs.current[index];
+    if (el) itemHeightRef.current = el.getBoundingClientRect().height + 8;
+    try {
+      e.target.setPointerCapture?.(e.pointerId);
+    } catch {
+      // algunos navegadores viejos no soportan setPointerCapture — no es crítico.
+    }
+  }
+
+  function onPointerMove(e) {
+    if (dragIndex === null) return;
+    const delta = e.clientY - startYRef.current;
+    setDragY(delta);
+    const steps = Math.round(delta / itemHeightRef.current);
+    if (steps !== 0) {
+      const newIndex = Math.min(items.length - 1, Math.max(0, dragIndex + steps));
+      if (newIndex !== dragIndex) {
+        const next = [...items];
+        const [moved] = next.splice(dragIndex, 1);
+        next.splice(newIndex, 0, moved);
+        onReorder(next);
+        setDragIndex(newIndex);
+        startYRef.current = e.clientY;
+        setDragY(0);
+      }
+    }
+  }
+
+  function endDrag() {
+    setDragIndex(null);
+    setDragY(0);
+  }
+
+  return (
+    <div onPointerMove={onPointerMove} onPointerUp={endDrag} onPointerCancel={endDrag}>
+      {items.map((item, i) => (
+        <div
+          key={item.exerciseId}
+          ref={(el) => (itemRefs.current[i] = el)}
+          style={{
+            transform: dragIndex === i ? `translateY(${dragY}px)` : "none",
+            position: "relative",
+            zIndex: dragIndex === i ? 2 : 1,
+            transition: dragIndex === i ? "none" : "transform 0.15s ease",
+          }}
+        >
+          {renderItem(item, i, (e) => onHandlePointerDown(e, i))}
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function PillButton({ children, onClick, subtitle, compact, muted, starred, onEdit, onDelete, onCheck, onPhoto, checked, highlighted }) {
   const btn = (
     <button
@@ -430,6 +617,30 @@ function PillButton({ children, onClick, subtitle, compact, muted, starred, onEd
         </button>
       )}
     </div>
+  );
+}
+
+// Chip de filtro (músculo / equipo / tipo de movimiento) para el buscador
+// avanzado de ejercicios. Se puede tocar para activar/desactivar.
+function FilterChip({ active, onClick, children }) {
+  return (
+    <button
+      onClick={onClick}
+      style={{
+        padding: "7px 13px",
+        borderRadius: 999,
+        border: active ? `1px solid ${CURRENT_ACCENT.solid}` : "1px solid #33312e",
+        background: active ? `${CURRENT_ACCENT.solid}26` : "#1a1917",
+        color: active ? CURRENT_ACCENT.solid : "#a39d95",
+        fontSize: 12.5,
+        fontWeight: 600,
+        cursor: "pointer",
+        whiteSpace: "nowrap",
+        flexShrink: 0,
+      }}
+    >
+      {children}
+    </button>
   );
 }
 
@@ -535,6 +746,12 @@ function DashedButton({ children, onClick }) {
 
 // Calendario desplegable de días completados. Maneja su propio mes en pantalla;
 // completedDays (Set de "YYYY-MM-DD") y onToggleDay vienen de <App>.
+// Color fijo para el día marcado en el calendario: no usa el color de acento
+// del usuario (que ya se usa en el botón "Marcar día") para que siempre
+// resalte y se distinga bien, sin importar qué acento tenga elegido.
+const MARKED_DAY_COLOR = "#3ecf8e";
+const MARKED_DAY_TEXT = "#07241a";
+
 function RoutineCalendar({ completedDays, onToggleDay }) {
   const now = new Date();
   const [viewYear, setViewYear] = useState(now.getFullYear());
@@ -621,8 +838,8 @@ function RoutineCalendar({ completedDays, onToggleDay }) {
                 aspectRatio: "1 / 1",
                 borderRadius: 10,
                 border: isToday && !isDone ? `1.5px solid ${CURRENT_ACCENT.solid}` : "1px solid transparent",
-                background: isDone ? CURRENT_ACCENT.solid : "transparent",
-                color: isDisabled ? "#4a463f" : isDone ? CURRENT_ACCENT.text : "#d7d2ca",
+                background: isDone ? MARKED_DAY_COLOR : "transparent",
+                color: isDisabled ? "#4a463f" : isDone ? MARKED_DAY_TEXT : "#d7d2ca",
                 fontSize: 13,
                 fontWeight: isDone ? 700 : 500,
                 cursor: isDisabled ? "default" : "pointer",
@@ -638,7 +855,7 @@ function RoutineCalendar({ completedDays, onToggleDay }) {
       </div>
 
       <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 14, fontSize: 11.5, color: "#8a8580" }}>
-        <div style={{ width: 10, height: 10, borderRadius: 4, background: CURRENT_ACCENT.solid }} />
+        <div style={{ width: 10, height: 10, borderRadius: 4, background: MARKED_DAY_COLOR }} />
         Toca cualquier día pasado o de hoy para marcarlo o desmarcarlo
       </div>
     </div>
@@ -1331,6 +1548,33 @@ export default function App() {
 
   const [photoExercise, setPhotoExercise] = useState(null); // ejercicio cuya foto se está mostrando en el overlay
 
+  // Reordenar ejercicios de un día arrastrando, en vez de editar el "orden" uno por uno.
+  const [reorderMode, setReorderMode] = useState(false);
+  const [reorderList, setReorderList] = useState([]);
+
+  // Buscador avanzado de "Agregar ejercicio": texto libre + filtros por
+  // músculo, equipo y tipo de movimiento (compuesto/aislamiento/cardio).
+  // Se abre con el ícono de lupa en la barra de arriba (como en la referencia).
+  const [exerciseSearchOpen, setExerciseSearchOpen] = useState(false);
+  const [exerciseSearchQuery, setExerciseSearchQuery] = useState("");
+  const [exerciseFiltersOpen, setExerciseFiltersOpen] = useState(false);
+  const [exerciseFilterMuscles, setExerciseFilterMuscles] = useState(() => new Set());
+  const [exerciseFilterEquipo, setExerciseFilterEquipo] = useState(() => new Set());
+  const [exerciseFilterTipo, setExerciseFilterTipo] = useState(() => new Set());
+  // Pestañas de la librería de ejercicios: "musculo" muestra tarjetas por
+  // músculo (2 columnas); "todos" muestra la lista completa sin agrupar.
+  // libraryMuscleKey guarda en qué músculo se hizo clic para ver su detalle.
+  const [libraryTab, setLibraryTab] = useState("musculo");
+  const [libraryMuscleKey, setLibraryMuscleKey] = useState(null);
+  function toggleInSet(setState, key) {
+    setState((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  }
+
   const [restTimerOpen, setRestTimerOpen] = useState(false);
   const [restPresetIndex, setRestPresetIndex] = useState(1);
   const [restSecondsLeft, setRestSecondsLeft] = useState(REST_PRESETS[1]);
@@ -1986,8 +2230,33 @@ export default function App() {
       .sort((a, b) => (a.order || 0) - (b.order || 0));
   }
 
+  function startReorder(dayKey) {
+    setReorderList(combinedDayExercises(dayKey));
+    setReorderMode(true);
+  }
+
+  function cancelReorder() {
+    setReorderMode(false);
+    setReorderList([]);
+  }
+
+  async function saveReorder(dayKey) {
+    const day = getDay(dayKey);
+    const orderByExerciseId = {};
+    reorderList.forEach((it, i) => {
+      orderByExerciseId[it.exerciseId] = i + 1;
+    });
+    const updatedPlan = (day.plan || []).map((p) => ({ ...p, order: orderByExerciseId[p.exerciseId] ?? p.order }));
+    await saveDay(dayKey, { ...day, plan: updatedPlan });
+    setReorderMode(false);
+    setReorderList([]);
+    flashSuccess("Orden actualizado");
+  }
+
   function openDay(dayKey) {
     setCurrentDayKey(dayKey);
+    setReorderMode(false);
+    setReorderList([]);
     const day = getDay(dayKey);
     setScreen(day.category ? "dayDetail" : "chooseCategory");
   }
@@ -2070,6 +2339,14 @@ export default function App() {
 
   function openAddExercise() {
     setError("");
+    setExerciseSearchOpen(false);
+    setExerciseSearchQuery("");
+    setExerciseFiltersOpen(false);
+    setExerciseFilterMuscles(new Set());
+    setExerciseFilterEquipo(new Set());
+    setExerciseFilterTipo(new Set());
+    setLibraryTab("musculo");
+    setLibraryMuscleKey(null);
     setScreen("addExercise");
   }
 
@@ -3355,7 +3632,7 @@ export default function App() {
     const isTraining = trainingDayKey === currentDayKey;
     return (
       <div style={shell}>
-        <TopBar title={dayLabel} onBack={() => setScreen("days")} />
+        <TopBar title={dayLabel} onBack={() => { cancelReorder(); setScreen("days"); }} />
         <button
           onClick={() => { setChangingCategory(true); setScreen("chooseCategory"); }}
           style={{ background: "none", border: "none", color: "#6e6a65", fontSize: 12, cursor: "pointer", padding: 0, marginBottom: 20, display: "block" }}
@@ -3369,6 +3646,72 @@ export default function App() {
           <>
             {exercises.length === 0 ? (
               <div style={{ color: "#8a8580", fontSize: 14, marginBottom: 16 }}>Aún no has agregado ejercicios.</div>
+            ) : reorderMode ? (
+              <>
+                <div style={{ fontSize: 12.5, color: "#8a8580", marginBottom: 14 }}>
+                  Mantén presionado <GripVertical size={12} style={{ verticalAlign: "-2px" }} /> y arrastra para cambiar el orden.
+                </div>
+                <ReorderableList
+                  items={reorderList}
+                  onReorder={setReorderList}
+                  renderItem={(item, i, onHandleDown) => (
+                    <div
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 10,
+                        padding: "12px 14px",
+                        marginBottom: 8,
+                        borderRadius: 14,
+                        border: "1px solid #33312e",
+                        background: "#1f1e1c",
+                      }}
+                    >
+                      <button
+                        onPointerDown={onHandleDown}
+                        aria-label="Arrastrar para reordenar"
+                        style={{ background: "none", border: "none", color: "#6e6a65", cursor: "grab", display: "flex", padding: 4, touchAction: "none" }}
+                      >
+                        <GripVertical size={18} />
+                      </button>
+                      <div style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: "#f2ede6", fontSize: 15, fontWeight: 500 }}>
+                        {item.name}
+                      </div>
+                      <div
+                        style={{
+                          width: 24,
+                          height: 24,
+                          borderRadius: "50%",
+                          background: "#141312",
+                          color: "#a39d95",
+                          fontSize: 12,
+                          fontWeight: 700,
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          flexShrink: 0,
+                        }}
+                      >
+                        {i + 1}
+                      </div>
+                    </div>
+                  )}
+                />
+                <div style={{ display: "flex", gap: 8, marginTop: 14, marginBottom: 18 }}>
+                  <button
+                    onClick={cancelReorder}
+                    style={{ flex: 1, padding: "12px", borderRadius: 999, border: "1px solid #33312e", background: "transparent", color: "#a39d95", fontSize: 14, fontWeight: 600, cursor: "pointer" }}
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    onClick={() => saveReorder(currentDayKey)}
+                    style={{ flex: 1, padding: "12px", borderRadius: 999, border: "none", background: accent.solid, color: accent.text, fontSize: 14, fontWeight: 700, cursor: "pointer" }}
+                  >
+                    Guardar orden
+                  </button>
+                </div>
+              </>
             ) : (
               <>
                 <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
@@ -3405,6 +3748,26 @@ export default function App() {
                   >
                     <Timer size={15} color={accent.solid} /> Descansar
                   </button>
+                  {exercises.length > 1 && (
+                    <button
+                      onClick={() => startReorder(currentDayKey)}
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 6,
+                        padding: "7px 16px",
+                        borderRadius: 999,
+                        border: "1px solid #33312e",
+                        background: "#1f1e1c",
+                        color: "#f2ede6",
+                        fontSize: 13.5,
+                        fontWeight: 500,
+                        cursor: "pointer",
+                      }}
+                    >
+                      <GripVertical size={15} color={accent.solid} /> Reordenar
+                    </button>
+                  )}
                 </div>
 
                 {exercises.map((ex) => {
@@ -3427,40 +3790,66 @@ export default function App() {
               </>
             )}
 
-            <div style={{ marginTop: 6 }}>
-              <DashedButton onClick={openAddExercise}>
-                <Plus size={17} /> Agregar ejercicio
-              </DashedButton>
-            </div>
-
-            {currentDayKey === todayDayKey() && (
-              <div style={{ marginTop: 18 }}>
-                <button
-                  onClick={() => { if (!completedDays.has(todayISO())) toggleCompletedDay(todayISO()); }}
-                  style={{
-                    width: "100%",
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    gap: 8,
-                    padding: "14px 18px",
-                    borderRadius: 999,
-                    border: "none",
-                    background: completedDays.has(todayISO()) ? accent.solid : "#232019",
-                    color: completedDays.has(todayISO()) ? accent.text : "#d7d2ca",
-                    fontSize: 15,
-                    fontWeight: 700,
-                    cursor: completedDays.has(todayISO()) ? "default" : "pointer",
-                  }}
-                >
-                  {completedDays.has(todayISO()) && <Check size={17} strokeWidth={3} />}
-                  {completedDays.has(todayISO()) ? "Día marcado 🔥" : "Marcar día"}
-                </button>
+            {!reorderMode && currentDayKey === todayDayKey() && (
+              <div style={{ marginTop: 10, marginBottom: 18 }}>
+                {completedDays.has(todayISO()) ? (
+                  <div
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      gap: 8,
+                      padding: "13px 18px",
+                      borderRadius: 999,
+                      border: "none",
+                      // Color fijo (igual al del calendario), no el acento del usuario,
+                      // para que siempre resalte frente al botón "Marcar día de hoy".
+                      background: MARKED_DAY_COLOR,
+                      color: MARKED_DAY_TEXT,
+                      fontSize: 14.5,
+                      fontWeight: 700,
+                    }}
+                  >
+                    <Check size={16} strokeWidth={3} />
+                    Día marcado 🔥
+                  </div>
+                ) : (
+                  <button
+                    onClick={() => toggleCompletedDay(todayISO())}
+                    style={{
+                      width: "100%",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      gap: 8,
+                      padding: "15px 18px",
+                      borderRadius: 999,
+                      border: "none",
+                      background: accent.solid,
+                      color: accent.text,
+                      fontSize: 15.5,
+                      fontWeight: 700,
+                      letterSpacing: 0.2,
+                      boxShadow: `0 4px 16px ${accent.solid}45`,
+                      cursor: "pointer",
+                    }}
+                  >
+                    Marcar día de hoy
+                  </button>
+                )}
                 {completedDays.has(todayISO()) && (
                   <div style={{ fontSize: 11.5, color: "#6e6a65", marginTop: 8, textAlign: "center" }}>
                     ¿Te equivocaste? Desmárcalo desde el Calendario en "Mi rutina".
                   </div>
                 )}
+              </div>
+            )}
+
+            {!reorderMode && (
+              <div style={{ marginTop: 6 }}>
+                <DashedButton onClick={openAddExercise}>
+                  <Plus size={17} /> Agregar ejercicio
+                </DashedButton>
               </div>
             )}
           </>
@@ -3738,37 +4127,290 @@ export default function App() {
   if (screen === "addExercise" && currentDayKey) {
     const day = getDay(currentDayKey);
     const alreadyIds = new Set((day.plan || []).map((p) => p.exerciseId));
-    const sections = EXERCISE_CATEGORIES.map((cat) => {
-      const fixed = cat.exercises.filter((name) => !alreadyIds.has("fx-" + slugify(name))).map((name) => ({ id: "fx-" + slugify(name), name, custom: false }));
+
+    // Todos los ejercicios disponibles (fijos + personalizados), con su
+    // músculo, equipo y tipo de movimiento, para poder filtrarlos.
+    const allItems = EXERCISE_CATEGORIES.flatMap((cat) => {
+      const fixed = cat.exercises
+        .filter((name) => !alreadyIds.has("fx-" + slugify(name)))
+        .map((name) => {
+          const id = "fx-" + slugify(name);
+          const meta = FIXED_EXERCISE_META[id] || {};
+          return { id, name, custom: false, categoryKey: cat.key, categoryLabel: cat.label, equipo: meta.equipo, tipo: meta.tipo };
+        });
       const customs = Object.entries(exercisesMap)
         .filter(([id, ex]) => ex.custom && !alreadyIds.has(id) && (ex.category === cat.key || (cat.key === "otro" && !ex.category)))
-        .map(([id, ex]) => ({ id, name: ex.name, custom: true }));
-      return { key: cat.key, label: cat.label, items: [...fixed, ...customs] };
-    }).filter((s) => s.items.length > 0);
+        .map(([id, ex]) => ({ id, name: ex.name, custom: true, categoryKey: cat.key, categoryLabel: cat.label, equipo: null, tipo: null }));
+      return [...fixed, ...customs];
+    });
+
+    const queryNorm = normalizeText(exerciseSearchQuery.trim());
+    const activeFilterCount = exerciseFilterMuscles.size + exerciseFilterEquipo.size + exerciseFilterTipo.size;
+    const hasActiveSearch = exerciseSearchOpen && (!!queryNorm || activeFilterCount > 0);
+
+    const filteredItems = hasActiveSearch
+      ? allItems.filter((it) => {
+          if (queryNorm && !normalizeText(it.name).includes(queryNorm)) return false;
+          if (exerciseFilterMuscles.size > 0 && !exerciseFilterMuscles.has(it.categoryKey)) return false;
+          if (exerciseFilterEquipo.size > 0 && (!it.equipo || !exerciseFilterEquipo.has(it.equipo))) return false;
+          if (exerciseFilterTipo.size > 0 && (!it.tipo || !exerciseFilterTipo.has(it.tipo))) return false;
+          return true;
+        })
+      : [];
+
+    // Vista agrupada por músculo de siempre, solo cuando no hay búsqueda ni filtros activos.
+    const sections = hasActiveSearch
+      ? []
+      : EXERCISE_CATEGORIES.map((cat) => {
+          const fixed = cat.exercises.filter((name) => !alreadyIds.has("fx-" + slugify(name))).map((name) => ({ id: "fx-" + slugify(name), name, custom: false }));
+          const customs = Object.entries(exercisesMap)
+            .filter(([id, ex]) => ex.custom && !alreadyIds.has(id) && (ex.category === cat.key || (cat.key === "otro" && !ex.category)))
+            .map(([id, ex]) => ({ id, name: ex.name, custom: true }));
+          return { key: cat.key, label: cat.label, items: [...fixed, ...customs] };
+        }).filter((s) => s.items.length > 0);
 
     return (
       <div style={shell}>
-        <TopBar title="Agregar ejercicio" onBack={() => setScreen("dayDetail")} />
-        {sections.length === 0 && (
-          <div style={{ color: "#8a8580", fontSize: 14, marginBottom: 16 }}>Ya agregaste todos los ejercicios disponibles.</div>
+        <TopBar
+          title="Agregar ejercicio"
+          onBack={() => setScreen("dayDetail")}
+          right={
+            <button
+              onClick={() => setExerciseSearchOpen((v) => !v)}
+              aria-label="Buscar ejercicio"
+              style={{
+                width: 34,
+                height: 34,
+                flexShrink: 0,
+                borderRadius: "50%",
+                border: `1px solid ${exerciseSearchOpen ? accent.solid : "#33312e"}`,
+                background: exerciseSearchOpen ? `${accent.solid}26` : "#1f1e1c",
+                color: exerciseSearchOpen ? accent.solid : "#c9c4bd",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                cursor: "pointer",
+              }}
+            >
+              <Search size={16} />
+            </button>
+          }
+        />
+
+        {exerciseSearchOpen && (
+          <>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "12px 14px", borderRadius: 14, border: "1px solid #35322e", background: "#1a1917", marginBottom: 10 }}>
+              <Search size={15} color="#6e6a65" />
+              <input
+                autoFocus
+                value={exerciseSearchQuery}
+                onChange={(e) => setExerciseSearchQuery(e.target.value)}
+                placeholder="Buscar por nombre..."
+                style={{ flex: 1, minWidth: 0, background: "transparent", border: "none", outline: "none", color: "#f2ede6", fontSize: 14.5 }}
+              />
+              {exerciseSearchQuery && (
+                <button onClick={() => setExerciseSearchQuery("")} aria-label="Borrar búsqueda" style={{ background: "none", border: "none", color: "#6e6a65", cursor: "pointer", display: "flex", padding: 0 }}>
+                  <X size={15} />
+                </button>
+              )}
+            </div>
+
+            <button
+              onClick={() => setExerciseFiltersOpen((v) => !v)}
+              style={{ display: "flex", alignItems: "center", gap: 6, background: "none", border: "none", color: activeFilterCount > 0 ? accent.solid : "#a39d95", fontSize: 13, fontWeight: 600, padding: "2px 2px 14px", cursor: "pointer" }}
+            >
+              Filtros{activeFilterCount > 0 ? ` (${activeFilterCount})` : ""} {exerciseFiltersOpen ? <ChevronUp size={15} /> : <ChevronDown size={15} />}
+            </button>
+
+            {exerciseFiltersOpen && (
+              <div style={{ marginBottom: 6 }}>
+                <div style={{ fontSize: 11, color: "#8a8580", fontWeight: 700, letterSpacing: 0.4, marginBottom: 8 }}>MÚSCULO</div>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 7, marginBottom: 16 }}>
+                  {CATEGORIES.map((c) => (
+                    <FilterChip key={c.key} active={exerciseFilterMuscles.has(c.key)} onClick={() => toggleInSet(setExerciseFilterMuscles, c.key)}>
+                      {c.label}
+                    </FilterChip>
+                  ))}
+                </div>
+                <div style={{ fontSize: 11, color: "#8a8580", fontWeight: 700, letterSpacing: 0.4, marginBottom: 8 }}>EQUIPO</div>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 7, marginBottom: 16 }}>
+                  {EQUIPMENT_OPTIONS.map((eq) => (
+                    <FilterChip key={eq.key} active={exerciseFilterEquipo.has(eq.key)} onClick={() => toggleInSet(setExerciseFilterEquipo, eq.key)}>
+                      {eq.label}
+                    </FilterChip>
+                  ))}
+                </div>
+                <div style={{ fontSize: 11, color: "#8a8580", fontWeight: 700, letterSpacing: 0.4, marginBottom: 8 }}>TIPO DE MOVIMIENTO</div>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 7, marginBottom: 8 }}>
+                  {MOVEMENT_OPTIONS.map((m) => (
+                    <FilterChip key={m.key} active={exerciseFilterTipo.has(m.key)} onClick={() => toggleInSet(setExerciseFilterTipo, m.key)}>
+                      {m.label}
+                    </FilterChip>
+                  ))}
+                </div>
+                {activeFilterCount > 0 && (
+                  <button
+                    onClick={() => {
+                      setExerciseFilterMuscles(new Set());
+                      setExerciseFilterEquipo(new Set());
+                      setExerciseFilterTipo(new Set());
+                    }}
+                    style={{ background: "none", border: "none", color: "#e07856", fontSize: 12.5, fontWeight: 600, padding: 0, marginTop: 2, marginBottom: 10, cursor: "pointer" }}
+                  >
+                    Limpiar filtros
+                  </button>
+                )}
+              </div>
+            )}
+          </>
         )}
-        {sections.map((s) => (
-          <div key={s.key} style={{ marginBottom: 18 }}>
-            <div style={{ fontSize: 12, color: "#8a8580", fontWeight: 700, letterSpacing: 0.4, marginBottom: 8 }}>{s.label.toUpperCase()}</div>
-            {s.items.map((it) => (
-              <PillButton
-                key={it.id}
-                compact
-                starred={it.custom}
-                onClick={() => openExerciseForm(it.name, it.id)}
-                onDelete={it.custom ? () => deleteCustomExercise(it.id, it.name) : undefined}
-                onPhoto={!it.custom ? () => openExercisePhoto({ exerciseId: it.id, name: it.name }) : undefined}
+
+        {hasActiveSearch ? (
+          filteredItems.length === 0 ? (
+            <div style={{ color: "#8a8580", fontSize: 14, marginBottom: 16 }}>No encontramos ejercicios con esa búsqueda o esos filtros.</div>
+          ) : (
+            <div style={{ marginBottom: 18 }}>
+              {filteredItems.map((it) => (
+                <PillButton
+                  key={it.id}
+                  compact
+                  starred={it.custom}
+                  subtitle={[it.categoryLabel, EQUIPMENT_OPTIONS.find((e) => e.key === it.equipo)?.label, MOVEMENT_OPTIONS.find((m) => m.key === it.tipo)?.label].filter(Boolean).join(" · ")}
+                  onClick={() => openExerciseForm(it.name, it.id)}
+                  onDelete={it.custom ? () => deleteCustomExercise(it.id, it.name) : undefined}
+                  onPhoto={!it.custom ? () => openExercisePhoto({ exerciseId: it.id, name: it.name }) : undefined}
+                >
+                  {it.name}
+                </PillButton>
+              ))}
+            </div>
+          )
+        ) : (
+          <>
+            <div style={{ display: "flex", gap: 8, marginBottom: 18 }}>
+              <button
+                onClick={() => {
+                  setLibraryTab("musculo");
+                  setLibraryMuscleKey(null);
+                }}
+                style={{
+                  flex: 1,
+                  padding: "10px 0",
+                  borderRadius: 999,
+                  border: `1px solid ${libraryTab === "musculo" ? accent.solid : "#33312e"}`,
+                  background: libraryTab === "musculo" ? accent.solid : "#1f1e1c",
+                  color: libraryTab === "musculo" ? accent.text : "#a39d95",
+                  fontSize: 13.5,
+                  fontWeight: 600,
+                  cursor: "pointer",
+                }}
               >
-                {it.name}
-              </PillButton>
-            ))}
-          </div>
-        ))}
+                Por músculo
+              </button>
+              <button
+                onClick={() => {
+                  setLibraryTab("todos");
+                  setLibraryMuscleKey(null);
+                }}
+                style={{
+                  flex: 1,
+                  padding: "10px 0",
+                  borderRadius: 999,
+                  border: `1px solid ${libraryTab === "todos" ? accent.solid : "#33312e"}`,
+                  background: libraryTab === "todos" ? accent.solid : "#1f1e1c",
+                  color: libraryTab === "todos" ? accent.text : "#a39d95",
+                  fontSize: 13.5,
+                  fontWeight: 600,
+                  cursor: "pointer",
+                }}
+              >
+                Todos
+              </button>
+            </div>
+
+            {libraryTab === "musculo" && libraryMuscleKey === null && (
+              sections.length === 0 ? (
+                <div style={{ color: "#8a8580", fontSize: 14, marginBottom: 16 }}>Ya agregaste todos los ejercicios disponibles.</div>
+              ) : (
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 18 }}>
+                  {sections.map((s) => (
+                    <button
+                      key={s.key}
+                      onClick={() => setLibraryMuscleKey(s.key)}
+                      style={{
+                        textAlign: "left",
+                        padding: "14px",
+                        borderRadius: 14,
+                        border: "1px solid #2a2824",
+                        background: "#1a1917",
+                        cursor: "pointer",
+                      }}
+                    >
+                      <div style={{ fontSize: 14, fontWeight: 600, color: "#f2ede6", marginBottom: 3 }}>{s.label}</div>
+                      <div style={{ fontSize: 12, color: "#8a8580" }}>
+                        {s.items.length} ejercicio{s.items.length === 1 ? "" : "s"}
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              )
+            )}
+
+            {libraryTab === "musculo" && libraryMuscleKey !== null && (() => {
+              const section = sections.find((s) => s.key === libraryMuscleKey);
+              return (
+                <div style={{ marginBottom: 18 }}>
+                  <button
+                    onClick={() => setLibraryMuscleKey(null)}
+                    style={{ display: "flex", alignItems: "center", gap: 4, background: "none", border: "none", color: "#a39d95", fontSize: 13, fontWeight: 600, padding: 0, marginBottom: 14, cursor: "pointer" }}
+                  >
+                    <ChevronLeft size={16} /> {section?.label || ""}
+                  </button>
+                  {!section || section.items.length === 0 ? (
+                    <div style={{ color: "#8a8580", fontSize: 14 }}>Ya agregaste todos los ejercicios de este músculo.</div>
+                  ) : (
+                    section.items.map((it) => (
+                      <PillButton
+                        key={it.id}
+                        compact
+                        starred={it.custom}
+                        onClick={() => openExerciseForm(it.name, it.id)}
+                        onDelete={it.custom ? () => deleteCustomExercise(it.id, it.name) : undefined}
+                        onPhoto={!it.custom ? () => openExercisePhoto({ exerciseId: it.id, name: it.name }) : undefined}
+                      >
+                        {it.name}
+                      </PillButton>
+                    ))
+                  )}
+                </div>
+              );
+            })()}
+
+            {libraryTab === "todos" && (
+              sections.length === 0 ? (
+                <div style={{ color: "#8a8580", fontSize: 14, marginBottom: 16 }}>Ya agregaste todos los ejercicios disponibles.</div>
+              ) : (
+                sections.map((s) => (
+                  <div key={s.key} style={{ marginBottom: 18 }}>
+                    <div style={{ fontSize: 12, color: "#8a8580", fontWeight: 700, letterSpacing: 0.4, marginBottom: 8 }}>{s.label.toUpperCase()}</div>
+                    {s.items.map((it) => (
+                      <PillButton
+                        key={it.id}
+                        compact
+                        starred={it.custom}
+                        onClick={() => openExerciseForm(it.name, it.id)}
+                        onDelete={it.custom ? () => deleteCustomExercise(it.id, it.name) : undefined}
+                        onPhoto={!it.custom ? () => openExercisePhoto({ exerciseId: it.id, name: it.name }) : undefined}
+                      >
+                        {it.name}
+                      </PillButton>
+                    ))}
+                  </div>
+                ))
+              )
+            )}
+          </>
+        )}
 
         <DashedButton onClick={openCustomExerciseForm}>
           <Plus size={17} /> Ejercicio personalizado nuevo
