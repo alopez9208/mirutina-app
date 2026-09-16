@@ -3770,21 +3770,27 @@ export default function App() {
                   )}
                 </div>
 
-                {exercises.map((ex) => {
+                {exercises.map((ex, i) => {
                   const pr = prOf(ex);
                   return (
-                    <PillButton
-                      key={ex.exerciseId}
-                      starred={ex.custom}
-                      onClick={() => openExercise(ex)}
-                      onDelete={() => quickDeleteExercise(ex)}
-                      onPhoto={!ex.custom ? () => openExercisePhoto(ex) : undefined}
-                      onCheck={isTraining ? () => toggleExerciseDone(ex.exerciseId) : undefined}
-                      checked={trainingCompleted.has(ex.exerciseId)}
-                      subtitle={`${pr !== null ? `PR: ${kgToUnit(pr, weightUnit)} ${weightUnit}` : "Sin PR"} · ${ex.sets}x${ex.reps} reps`}
-                    >
-                      {ex.name}
-                    </PillButton>
+                    <div key={ex.exerciseId} style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                      <div style={{ width: 20, flexShrink: 0, textAlign: "center", fontSize: 13, fontWeight: 600, color: "#6e6a65" }}>
+                        {i + 1}
+                      </div>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <PillButton
+                          starred={ex.custom}
+                          onClick={() => openExercise(ex)}
+                          onDelete={() => quickDeleteExercise(ex)}
+                          onPhoto={!ex.custom ? () => openExercisePhoto(ex) : undefined}
+                          onCheck={isTraining ? () => toggleExerciseDone(ex.exerciseId) : undefined}
+                          checked={trainingCompleted.has(ex.exerciseId)}
+                          subtitle={`${pr !== null ? `PR: ${kgToUnit(pr, weightUnit)} ${weightUnit}` : "Sin PR"} · ${ex.sets}x${ex.reps} reps`}
+                        >
+                          {ex.name}
+                        </PillButton>
+                      </div>
+                    </div>
                   );
                 })}
               </>
