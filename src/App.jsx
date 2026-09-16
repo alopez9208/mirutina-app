@@ -41,8 +41,8 @@ const TRAINING_STORAGE_KEY = "mirutina_training";
 
 // ---------- Calorías del día ----------
 // A propósito NO se guarda en localStorage ni en Firestore: todo vive solo en
-// memoria mientras dura la sesión (texto, foto y kcal de cada comida), y se
-// borra por completo al tocar "Borrar" o automáticamente al cambiar de día.
+// memoria mientras dura la sesión (texto, foto, kcal y macros de cada comida),
+// y se borra por completo al tocar "Borrar" o automáticamente al cambiar de día.
 const CALORIE_MEALS = [
   { key: "desayuno", label: "Desayuno" },
   { key: "media_manana", label: "Media mañana" },
@@ -52,16 +52,56 @@ const CALORIE_MEALS = [
   { key: "otras", label: "Otras comidas" },
 ];
 const CALORIES_AI_DAILY_LIMIT = 2;
+// Igual que en apps de nutrición conocidas: carbohidratos en naranja, grasas en
+// azul, proteínas en verde. Por ahora se llenan a mano (o con el botón demo de
+// IA); cuando haya un backend real, el mismo esquema de campos sirve para lo
+// que devuelva el modelo.
+const MACRO_FIELDS = [
+  { key: "carbos", label: "Carbos", color: "#e0a92e" },
+  { key: "grasas", label: "Grasas", color: "#5b8dff" },
+  { key: "proteinas", label: "Proteínas", color: "#3ecf8e" },
+];
 function emptyCaloriesData() {
   const obj = {};
   CALORIE_MEALS.forEach((m) => {
-    obj[m.key] = { texto: "", foto: null, kcal: "" };
+    obj[m.key] = { texto: "", foto: null, kcal: "", carbos: "", grasas: "", proteinas: "" };
   });
   return obj;
 }
 function mealHasContent(entry) {
   return !!(entry && (entry.texto?.trim() || entry.foto));
 }
+
+// ---------- Puntuación nutricional por comida ----------
+// Heurística simple mientras no hay IA real: compara qué % de las kcal de la
+// comida viene de cada macro (usando 4 kcal/g en carbos y proteína, 9 kcal/g
+// en grasa) contra un rango "ideal" aproximado por comida, y entre más se
+// aleje de esos rangos, más baja la puntuación. Solo se calcula si la comida
+// ya tiene kcal Y al menos un gramo de macro cargado (a mano o con la IA demo).
+const MEAL_SCORE_LEVELS = [
+  { min: 70, label: "Buena", color: "#3ecf8e" },
+  { min: 40, label: "Regular", color: "#e0a92e" },
+  { min: 0, label: "Mala", color: "#e0725e" },
+];
+function mealNutritionScore(data) {
+  const kcal = Number(data?.kcal) || 0;
+  const carbos = Number(data?.carbos) || 0;
+  const grasas = Number(data?.grasas) || 0;
+  const proteinas = Number(data?.proteinas) || 0;
+  if (kcal <= 0) return null;
+  const kcalMacros = carbos * 4 + grasas * 9 + proteinas * 4;
+  if (kcalMacros <= 0) return null;
+  const pctCarbos = (carbos * 4) / kcalMacros;
+  const pctGrasas = (grasas * 9) / kcalMacros;
+  const pctProteinas = (proteinas * 4) / kcalMacros;
+  const distFromRange = (pct, min, max) => (pct < min ? min - pct : pct > max ? pct - max : 0);
+  const totalDist =
+    distFromRange(pctCarbos, 0.4, 0.55) + distFromRange(pctGrasas, 0.2, 0.35) + distFromRange(pctProteinas, 0.15, 0.35);
+  const score = Math.max(0, Math.min(100, Math.round(100 - totalDist * 150)));
+  const level = MEAL_SCORE_LEVELS.find((l) => score >= l.min);
+  return { score, ...level };
+}
+
 function mealHasAnything(entry) {
   return !!(entry && (entry.texto?.trim() || entry.foto || entry.kcal !== ""));
 }
@@ -774,9 +814,10 @@ function DashedButton({ children, onClick }) {
 // Tarjeta de una comida en la pantalla de Calorías. Se resalta con el color de
 // acento (como el día de hoy en el calendario) en cuanto tiene texto, foto o
 // kcal, y se mantiene resaltada aunque se abra otra comida.
-function CalorieMealCard({ meal, data, isOpen, onToggle, onTextChange, onKcalChange, onPickPhoto, onRemovePhoto }) {
+function CalorieMealCard({ meal, data, isOpen, onToggle, onTextChange, onKcalChange, onMacroChange, onPickPhoto, onRemovePhoto }) {
   const accent = CURRENT_ACCENT;
   const hasContent = mealHasAnything(data);
+  const score = mealNutritionScore(data);
   return (
     <div
       style={{
@@ -815,6 +856,21 @@ function CalorieMealCard({ meal, data, isOpen, onToggle, onTextChange, onKcalCha
         <span style={{ flex: 1, fontSize: 15.5, fontWeight: 600 }}>{meal.label}</span>
         {data.kcal !== "" && (
           <span style={{ fontSize: 12.5, color: accent.solid, fontWeight: 700, flexShrink: 0 }}>{data.kcal} kcal</span>
+        )}
+        {score && (
+          <span
+            style={{
+              fontSize: 11,
+              fontWeight: 700,
+              color: score.color,
+              background: `${score.color}22`,
+              padding: "3px 8px",
+              borderRadius: 999,
+              flexShrink: 0,
+            }}
+          >
+            {score.label}
+          </span>
         )}
         {isOpen ? <ChevronUp size={17} color="#8a8580" /> : <ChevronDown size={17} color="#8a8580" />}
       </button>
@@ -888,7 +944,7 @@ function CalorieMealCard({ meal, data, isOpen, onToggle, onTextChange, onKcalCha
             </label>
           )}
 
-          <label style={{ display: "block" }}>
+          <label style={{ display: "block", marginBottom: 12 }}>
             <div style={{ fontSize: 11.5, color: "#a39d95", marginBottom: 5, fontWeight: 500 }}>Kcal</div>
             <input
               type="number"
@@ -910,6 +966,53 @@ function CalorieMealCard({ meal, data, isOpen, onToggle, onTextChange, onKcalCha
               }}
             />
           </label>
+
+          <div style={{ display: "flex", gap: 8 }}>
+            {MACRO_FIELDS.map((mf) => (
+              <label key={mf.key} style={{ display: "block", flex: 1 }}>
+                <div style={{ fontSize: 11.5, color: mf.color, marginBottom: 5, fontWeight: 600 }}>{mf.label} (g)</div>
+                <input
+                  type="number"
+                  min="0"
+                  inputMode="numeric"
+                  value={data[mf.key]}
+                  onChange={(e) => onMacroChange(mf.key, e.target.value)}
+                  placeholder="0"
+                  style={{
+                    width: "100%",
+                    boxSizing: "border-box",
+                    padding: "10px 12px",
+                    borderRadius: 12,
+                    border: "1px solid #35322e",
+                    background: "#1a1917",
+                    color: "#f2ede6",
+                    fontSize: 14.5,
+                    outline: "none",
+                  }}
+                />
+              </label>
+            ))}
+          </div>
+
+          {score ? (
+            <div style={{ marginTop: 14 }}>
+              <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginBottom: 6 }}>
+                <span style={{ fontSize: 11.5, color: "#a39d95", fontWeight: 500 }}>Puntuación nutricional</span>
+                <span style={{ fontSize: 12.5, fontWeight: 700, color: score.color }}>
+                  {score.label} · {score.score}
+                </span>
+              </div>
+              <div style={{ height: 6, borderRadius: 999, background: "#2c2924", overflow: "hidden" }}>
+                <div style={{ height: "100%", width: `${score.score}%`, background: score.color, borderRadius: 999 }} />
+              </div>
+            </div>
+          ) : (
+            data.kcal !== "" && (
+              <div style={{ fontSize: 11, color: "#6e6a65", marginTop: 12 }}>
+                Agrega los gramos de carbos, grasas y proteínas para ver la puntuación de esta comida.
+              </div>
+            )
+          )}
         </div>
       )}
     </div>
@@ -1975,7 +2078,12 @@ export default function App() {
         const next = { ...prev };
         pending.forEach((m) => {
           const estimate = 250 + Math.round(Math.random() * 350);
-          next[m.key] = { ...next[m.key], kcal: String(estimate) };
+          // Demo: reparte el estimado en macros con una proporción típica
+          // (40% carbos, 30% grasas, 30% proteína) usando 4/4/9 kcal por gramo.
+          const carbos = Math.round((estimate * 0.4) / 4);
+          const grasas = Math.round((estimate * 0.3) / 9);
+          const proteinas = Math.round((estimate * 0.3) / 4);
+          next[m.key] = { ...next[m.key], kcal: String(estimate), carbos: String(carbos), grasas: String(grasas), proteinas: String(proteinas) };
         });
         return next;
       });
@@ -3404,6 +3512,10 @@ export default function App() {
   // ---------- CALORÍAS ----------
   if (screen === "calories") {
     const totalKcal = CALORIE_MEALS.reduce((sum, m) => sum + (Number(caloriesData[m.key]?.kcal) || 0), 0);
+    const totalMacros = MACRO_FIELDS.map((mf) => ({
+      ...mf,
+      total: CALORIE_MEALS.reduce((sum, m) => sum + (Number(caloriesData[m.key]?.[mf.key]) || 0), 0),
+    }));
     const pendingForIA = CALORIE_MEALS.filter((m) => mealHasContent(caloriesData[m.key]) && caloriesData[m.key].kcal === "");
     const anyContent = CALORIE_MEALS.some((m) => mealHasAnything(caloriesData[m.key]));
     return (
@@ -3446,6 +3558,25 @@ export default function App() {
           </div>
         </div>
 
+        <div style={{ display: "flex", gap: 8, marginBottom: 20 }}>
+          {totalMacros.map((tm) => (
+            <div
+              key={tm.key}
+              style={{
+                flex: 1,
+                borderRadius: 14,
+                border: "1px solid #2c2924",
+                background: "#1f1e1c",
+                padding: "10px 12px",
+                textAlign: "center",
+              }}
+            >
+              <div style={{ fontSize: 16, fontWeight: 700, color: tm.color }}>{tm.total}g</div>
+              <div style={{ fontSize: 10.5, color: "#8a8580", marginTop: 2 }}>{tm.label}</div>
+            </div>
+          ))}
+        </div>
+
         {CALORIE_MEALS.map((m) => (
           <CalorieMealCard
             key={m.key}
@@ -3455,6 +3586,7 @@ export default function App() {
             onToggle={() => setCaloriesOpenMeal((v) => (v === m.key ? null : m.key))}
             onTextChange={(v) => updateCalorieMeal(m.key, { texto: v })}
             onKcalChange={(v) => updateCalorieMeal(m.key, { kcal: v })}
+            onMacroChange={(macroKey, v) => updateCalorieMeal(m.key, { [macroKey]: v })}
             onPickPhoto={(e) => handleCaloriePhoto(m.key, e)}
             onRemovePhoto={() => updateCalorieMeal(m.key, { foto: null })}
           />
@@ -3489,7 +3621,7 @@ export default function App() {
               ? "Ya usaste la IA las 2 veces de hoy. Puedes seguir escribiendo el kcal a mano."
               : pendingForIA.length === 0
               ? "Escribe o sube foto en alguna comida sin kcal para poder calcularla con IA."
-              : `Estima el kcal con IA de las comidas con texto o foto que aún no tengan kcal (demo — la app real conecta un backend con IA).`}
+              : `Estima kcal y macros con IA de las comidas con texto o foto que aún no tengan kcal (demo — la app real conecta un backend con IA).`}
           </div>
         </div>
       </div>
