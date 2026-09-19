@@ -4684,9 +4684,10 @@ export default function App() {
                 background: "#2a2824",
                 borderRadius: 999,
                 padding: "3px 8px",
+                whiteSpace: "nowrap",
               }}
             >
-              Beta · sin IA
+              Beta · datos simulados
             </span>
           </span>
           <div
