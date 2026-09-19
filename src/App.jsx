@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useRef } from "react";
-import { Dumbbell, Plus, ChevronRight, ChevronLeft, ArrowLeft, Check, X, Eye, EyeOff, Trophy, Trash2, Star, Pencil, Share2, FolderClock, Download, Save, Copy, Sparkles, ChevronDown, ChevronUp, Timer, Play, Pause, RotateCcw, Calculator, Calendar as CalendarIcon, Medal, Users, UserPlus, Search, GripVertical, Info } from "lucide-react";
+import React, { useState, useEffect, useRef, useMemo } from "react";
+import { Dumbbell, Plus, ChevronRight, ChevronLeft, ArrowLeft, Check, X, Eye, EyeOff, Trophy, Trash2, Star, Pencil, Share2, FolderClock, Download, Save, Copy, Sparkles, ChevronDown, ChevronUp, Timer, Play, Pause, RotateCcw, Calculator, Calendar as CalendarIcon, Medal, Users, UserPlus, Search, GripVertical, Info, HeartPulse } from "lucide-react";
 import { auth, db } from "./firebase";
 import {
   createUserWithEmailAndPassword,
@@ -122,6 +122,7 @@ function mealHasAnything(entry) {
 // Historial de cambios que se muestra en "Ver últimas actualizaciones".
 // Para agregar uno nuevo, súmalo arriba de la lista (el más reciente primero).
 const UPDATES = [
+  { date: "19 sept 2026", text: "Nuevo botón Recuperación: marca cómo te sientes y qué músculos tienes adoloridos, y te damos recomendaciones." },
   { date: "13 sept 2026", text: "Nueva sección de Amigos: agrégalos por su usuario y visualiza la insignia semanal que van ganando." },
   { date: "12 sept 2026", text: "Nuevas insignias semanales: entrena 2+ días en la semana y gana una insignia. Elige hasta 2 para mostrar en tu inicio desde 'Mis insignias'." },
   { date: "11 sept 2026", text: "Ahora puedes ver la foto de cada ejercicio del catálogo tocando el ícono junto a él. Los personalizados todavía no tienen foto." },
@@ -2107,6 +2108,977 @@ function NewRecordOverlay({ exerciseName, before, after, unit = "kg" }) {
   );
 }
 
+// =====================================================================
+// RECUPERACIÓN (pantalla completa + ilustraciones de ejercicios)
+// Todo va encerrado en esta función para que sus nombres internos no
+// choquen con los del resto de la app. Solo se expone RecuperacionScreen.
+// Se abre desde "Mi rutina" (botón Recuperación).
+// =====================================================================
+const RecuperacionScreen = (() => {
+/* ==========================================================================
+   Figuras animadas de ejercicios (SVG puro, sin imágenes externas).
+   Cada figura es un esqueleto: se definen ángulos por segmento y se animan
+   entre dos poses. Ángulos: 0 = derecha, 90 = abajo, 180 = izquierda, -90 = arriba.
+   ========================================================================== */
+
+const L = { torso: 45, neck: 8, head: 10, arm1: 28, arm2: 22, hand: 12, leg1: 37, leg2: 37, foot: 16 };
+const FLOOR = 158;
+const BODY = "#e6dfd5";
+const FAR = "#8b857d";
+
+const DEF_SIDE = { T: -90, Hd: -90, bend: 0, aN1: 90, aN2: 90, aN3: 90, aF1: 90, aF2: 90, aF3: 90, lN1: 90, lN2: 90, lN3: 0, lF1: 90, lF2: 90, lF3: 0, px: 120 };
+const DEF_FRONT = { ...DEF_SIDE, lN3: 180, lF3: 0 };
+
+const rad = (a) => (a * Math.PI) / 180;
+const pol = (p, a, l) => [p[0] + Math.cos(rad(a)) * l, p[1] + Math.sin(rad(a)) * l];
+const ease = (x) => 0.5 - 0.5 * Math.cos(Math.PI * x);
+const mix = (a, b, t) => a + (b - a) * t;
+
+// ---------- Definición de las figuras ----------
+// Zoom para poses bajas: z = aumento, cx = centro horizontal del contenido
+const zoom = (z, cx = 120) => [cx - 120 / z, 164 - 140 / z, 240 / z, 140 / z];
+
+const FIGURES = {
+  /* ---------- PECHO ---------- */
+  doorway: {
+    vb: [-2, -12, 244, 182],
+    view: "front", pin: "H",
+    frames: [{ px: 120, aN1: 180, aN2: -90, aN3: -90, aF1: 0, aF2: -90, aF3: -90 }],
+    blobs: [{ a: "S", dy: 10, r: 14 }],
+    back: (P) => (
+      <g stroke="#6b665f" strokeWidth="6" strokeLinecap="round">
+        <line x1={P.elbN[0] - 7} y1={P.wrN[1] - 26} x2={P.elbN[0] - 7} y2={FLOOR} />
+        <line x1={P.elbF[0] + 7} y1={P.wrF[1] - 26} x2={P.elbF[0] + 7} y2={FLOOR} />
+      </g>
+    ),
+  },
+  bandFly: {
+    view: "front", pin: "H", dur: 1500, hold: [150, 350],
+    frames: [
+      { px: 120, aN1: 115, aN2: -35, aN3: -20, aF1: 65, aF2: -145, aF3: -160 },
+      { px: 120, aN1: 178, aN2: 182, aN3: 182, aF1: 2, aF2: -2, aF3: -2 },
+    ],
+    blobs: [{ a: "S", dy: 10, r: 14 }],
+    extras: (P, u, ac) => {
+      const sag = (1 - u) * 16;
+      const mx = (P.fiN[0] + P.fiF[0]) / 2;
+      const my = (P.fiN[1] + P.fiF[1]) / 2 + sag;
+      return <path d={`M ${P.fiN[0]} ${P.fiN[1]} Q ${mx} ${my} ${P.fiF[0]} ${P.fiF[1]}`} fill="none" stroke={ac} strokeWidth="2.5" strokeLinecap="round" />;
+    },
+  },
+
+  /* ---------- ESPALDA ---------- */
+  childPose: {
+    vb: zoom(1.55),
+    view: "side", pin: "H", dur: 2600, hold: [200, 200],
+    frames: [
+      { px: 78, T: -8, Hd: 33, aN1: 20, aN2: 20, aN3: 5, aF1: 22, aF2: 22, aF3: 8, lN1: 15, lN2: 180, lN3: 180, lF1: 13, lF2: 180, lF3: 180 },
+      { px: 78, T: -13, Hd: 38, aN1: 22, aN2: 20, aN3: 5, aF1: 24, aF2: 22, aF3: 8, lN1: 15, lN2: 180, lN3: 180, lF1: 13, lF2: 180, lF3: 180 },
+    ],
+    blobs: [{ a: "H", b: "S", t: 0.6, dy: -6, r: 9 }],
+  },
+  catCow: {
+    vb: zoom(1.5),
+    view: "side", pin: "H", dur: 2200, hold: [250, 250],
+    frames: [
+      { px: 118, T: -15.5, bend: -9, Hd: -45, aN1: 90, aN2: 90, aN3: 0, aF1: 88, aF2: 92, aF3: 0, lN1: 90, lN2: 180, lN3: 180, lF1: 88, lF2: 180, lF3: 180 },
+      { px: 118, T: -15.5, bend: 13, Hd: 58, aN1: 90, aN2: 90, aN3: 0, aF1: 88, aF2: 92, aF3: 0, lN1: 90, lN2: 180, lN3: 180, lF1: 88, lF2: 180, lF3: 180 },
+    ],
+    blobs: [{ a: "H", b: "S", t: 0.55, dy: -5, r: 9 }],
+  },
+
+  /* ---------- HOMBROS ---------- */
+  crossArm: {
+    view: "front", pin: "H", dur: 2000, hold: [300, 500],
+    frames: [
+      { px: 120, aN1: 10, aN2: 10, aN3: 10, aF1: 110, aF2: -95, aF3: -170 },
+      { px: 120, aN1: 16, aN2: 14, aN3: 14, aF1: 112, aF2: -100, aF3: -172 },
+    ],
+    blobs: [{ a: "shN", r: 12 }],
+  },
+  armCircles: {
+    view: "front", pin: "H", loop: true, dur: 3200,
+    fn: (u) => {
+      const d = 34 * Math.sin(2 * Math.PI * u);
+      return { px: 120, aN1: 180 + d, aN2: 180 + d, aN3: 180 + d, aF1: 90, aF2: 90, aF3: 90 };
+    },
+    blobs: [{ a: "shN", r: 11 }],
+    extras: (P, u, ac) => {
+      const c = [P.shN[0] - 62, P.shN[1]];
+      const ang = 2 * Math.PI * u;
+      return (
+        <g>
+          <circle cx={c[0]} cy={c[1]} r="17" fill="none" stroke={ac} strokeWidth="1.6" strokeDasharray="3 4" opacity="0.85" />
+          <circle cx={c[0] + 17 * Math.cos(ang + Math.PI / 2)} cy={c[1] - 17 * Math.sin(ang + Math.PI / 2)} r="3.2" fill={ac} />
+        </g>
+      );
+    },
+  },
+
+  /* ---------- BÍCEPS ---------- */
+  wallBiceps: {
+    view: "front", pin: "H",
+    frames: [{ px: 150, aN1: 180, aN2: 180, aN3: -90, aF1: 90, aF2: 90, aF3: 90 }],
+    blobs: [{ a: "shN", b: "elbN", t: 0.5, r: 9 }],
+    back: (P) => {
+      const wx = P.wrN[0] - 4;
+      const hatch = [];
+      for (let y = 10; y < FLOOR; y += 12) hatch.push(<line key={y} x1={wx} y1={y + 8} x2={wx - 9} y2={y} stroke="#4a4642" strokeWidth="2" />);
+      return (
+        <g>
+          <line x1={wx} y1="6" x2={wx} y2={FLOOR} stroke="#6b665f" strokeWidth="4" strokeLinecap="round" />
+          {hatch}
+        </g>
+      );
+    },
+    extras: (P, u, ac) => (
+      <path d={`M ${P.S[0] - 14} ${P.S[1] + 28} A 16 16 0 0 0 ${P.S[0] + 14} ${P.S[1] + 28}`} fill="none" stroke={ac} strokeWidth="2" strokeLinecap="round" markerEnd="url(#rc-arrow)" />
+    ),
+  },
+  elbowExt: {
+    view: "side", pin: "H", dur: 1700, hold: [250, 250],
+    frames: [
+      { px: 120, aN1: 92, aN2: 90, aN3: 90, aF1: 88, aF2: 90, aF3: 90 },
+      { px: 120, aN1: 92, aN2: -42, aN3: -42, aF1: 88, aF2: 90, aF3: 90 },
+    ],
+    blobs: [{ a: "S", b: "elbN", t: 0.5, dx: 4, r: 9 }],
+  },
+
+  /* ---------- TRÍCEPS ---------- */
+  tricepsOverhead: {
+    headBack: true,
+    vb: [-2, -12, 244, 182],
+    view: "front", pin: "H", dur: 2000, hold: [300, 500],
+    frames: [
+      { px: 120, aF1: -100, aF2: 130, aF3: 130, aN1: -25, aN2: -55, aN3: -55 },
+      { px: 120, aF1: -100, aF2: 130, aF3: 130, aN1: -21, aN2: -52, aN3: -52 },
+    ],
+    blobs: [{ a: "shF", b: "elbF", t: 0.55, r: 8 }],
+  },
+
+  /* ---------- ANTEBRAZO ---------- */
+  flexorStretch: {
+    view: "side", pin: "H", dur: 1800, hold: [300, 600],
+    frames: [
+      { px: 88, aN1: 0, aN2: 0, aN3: 78, aF1: 12, aF2: 12, aF3: 0 },
+      { px: 88, aN1: 0, aN2: 0, aN3: 100, aF1: 12, aF2: 12, aF3: 0 },
+    ],
+    blobs: [{ a: "elbN", b: "wrN", t: 0.5, r: 8 }],
+    extras: (P, u, ac) => palmMark(P, ac, +3.6),
+  },
+  extensorStretch: {
+    view: "side", pin: "H", dur: 1800, hold: [300, 600],
+    frames: [
+      { px: 88, aN1: 0, aN2: 0, aN3: 78, aF1: 12, aF2: 12, aF3: 0 },
+      { px: 88, aN1: 0, aN2: 0, aN3: 100, aF1: 12, aF2: 12, aF3: 0 },
+    ],
+    blobs: [{ a: "elbN", b: "wrN", t: 0.5, r: 8 }],
+    extras: (P, u, ac) => palmMark(P, ac, -3.6),
+  },
+
+  /* ---------- ABDOMEN ---------- */
+  cobra: {
+    vb: zoom(1.3, 118),
+    view: "side", pin: "H", dur: 2600, hold: [300, 700],
+    frames: [
+      { px: 138, T: -25, Hd: -12, aN1: 140, aN2: 9, aN3: 0, aF1: 138, aF2: 8, aF3: 0, lN1: 180, lN2: 180, lN3: 180, lF1: 178, lF2: 180, lF3: 180 },
+      { px: 138, T: -55, Hd: -32, aN1: 100, aN2: 31.5, aN3: 0, aF1: 98, aF2: 30, aF3: 0, lN1: 180, lN2: 180, lN3: 180, lF1: 178, lF2: 180, lF3: 180 },
+    ],
+    blobs: [{ a: "H", b: "S", t: 0.55, dx: 2, dy: 6, r: 8 }],
+  },
+  diaphragm: {
+    vb: zoom(1.5, 112),
+    view: "side", pin: "H", dur: 2600, hold: [200, 400],
+    frames: [
+      { px: 112, T: -5, Hd: -12, aN1: 165, aN2: -165, aN3: -165, aF1: 170, aF2: -168, aF3: -168, lN1: -125, lN2: 122, lN3: 180, lF1: -122, lF2: 120, lF3: 180 },
+      { px: 112, T: -5, Hd: -12, aN1: 165, aN2: -165, aN3: -165, aF1: 170, aF2: -168, aF3: -168, lN1: -125, lN2: 122, lN3: 180, lF1: -122, lF2: 120, lF3: 180 },
+    ],
+    extras: (P, u, ac) => {
+      const cx = P.H[0] + (P.S[0] - P.H[0]) * 0.4;
+      const cy = P.H[1] + (P.S[1] - P.H[1]) * 0.4 - 6 - u * 3;
+      return <ellipse className="rc-blob" cx={cx} cy={cy} rx={11 + u * 2} ry={4 + u * 7} fill={ac} stroke={ac} strokeWidth="1.5" />;
+    },
+  },
+
+  /* ---------- CUÁDRICEPS ---------- */
+  quadStand: {
+    view: "side", pin: "H",
+    frames: [{ px: 120, aN1: 105, aN2: 115, aN3: 100, lN1: 100, lN2: -105, lN3: -100, lF1: 90, lF2: 90, lF3: 0, aF1: 90, aF2: 90, aF3: 90 }],
+    blobs: [{ a: "H", b: "knN", t: 0.5, dx: 5, r: 10 }],
+  },
+  lungeHip: {
+    vb: zoom(1.05, 105),
+    view: "side", pin: "H",
+    frames: [{ px: 100, T: -88, Hd: -85, aN1: 62, aN2: 58, aN3: 0, aF1: 64, aF2: 60, aF3: 0, lN1: -5, lN2: 90, lN3: 0, lF1: 114, lF2: 180, lF3: 180 }],
+    blobs: [{ a: "H", dx: -4, dy: 4, r: 11 }],
+  },
+
+  /* ---------- FEMORALES ---------- */
+  seatedHam: {
+    vb: zoom(1.35, 112),
+    view: "side", pin: "H", dur: 2400, hold: [300, 600],
+    frames: [
+      { px: 72, T: -45, Hd: -30, aN1: 35, aN2: 25, aN3: 10, aF1: 33, aF2: 22, aF3: 10, lN1: 0, lN2: 0, lN3: -70, lF1: -50, lF2: 120, lF3: 0 },
+      { px: 72, T: -28, Hd: -16, aN1: 20, aN2: 10, aN3: 10, aF1: 18, aF2: 8, aF3: 10, lN1: 0, lN2: 0, lN3: -70, lF1: -50, lF2: 120, lF3: 0 },
+    ],
+    blobs: [{ a: "H", b: "knN", t: 0.5, dy: 3, r: 8 }],
+  },
+  hipHinge: {
+    view: "side", pin: "anN", dur: 2000, hold: [300, 300],
+    frames: [
+      { px: 125, T: -90, Hd: -90, aN1: 90, aN2: 90, aN3: 90, lN1: 90, lN2: 90, lN3: 0, lF1: 90, lF2: 90, lF3: 0 },
+      { px: 125, T: -25, Hd: -30, aN1: 90, aN2: 90, aN3: 90, lN1: 60, lN2: 100, lN3: 0, lF1: 60, lF2: 100, lF3: 0 },
+    ],
+    blobs: [{ a: "H", b: "knN", t: 0.5, dy: -4, r: 9 }],
+  },
+
+  /* ---------- GLÚTEOS ---------- */
+  pigeon: {
+    vb: zoom(1.2, 108),
+    view: "side", pin: "H", dur: 2600, hold: [500, 600],
+    frames: [
+      { px: 100, T: -62, Hd: -58, aN1: 66, aN2: 66, aN3: 0, aF1: 68, aF2: 68, aF3: 0, lN1: -8, lN2: 168, lN3: 170, lF1: 175, lF2: 180, lF3: 180 },
+      { px: 100, T: -10, Hd: 20, aN1: 20, aN2: 20, aN3: 5, aF1: 22, aF2: 22, aF3: 8, lN1: -8, lN2: 168, lN3: 170, lF1: 175, lF2: 180, lF3: 180 },
+    ],
+    blobs: [{ a: "H", dy: -2, r: 9 }],
+  },
+  bridge: {
+    vb: zoom(1.5, 122),
+    view: "side", pin: "anN", dur: 1900, hold: [300, 500],
+    frames: [
+      { px: 92, T: 0, Hd: -14, aN1: 180, aN2: 180, aN3: 180, aF1: 178, aF2: 180, aF3: 180, lN1: -100, lN2: 100, lN3: 180, lF1: -98, lF2: 98, lF3: 180 },
+      { px: 92, T: 38.5, Hd: -14.5, aN1: 180, aN2: 180, aN3: 180, aF1: 178, aF2: 180, aF3: 180, lN1: -170, lN2: 68.4, lN3: 180, lF1: -168, lF2: 66, lF3: 180 },
+    ],
+    blobs: [{ a: "H", r: 9 }],
+  },
+
+  /* ---------- GEMELOS ---------- */
+  calfWall: {
+    view: "side", pin: "wrN",
+    frames: [{ px: 168, T: -70, Hd: -68, aN1: 0, aN2: 0, aN3: -90, aF1: 2, aF2: 2, aF3: -90, lN1: 105, lN2: 105, lN3: 0, lF1: 65, lF2: 88, lF3: 0 }],
+    blobs: [{ a: "knN", b: "anN", t: 0.5, dx: -4, r: 9 }],
+    back: (P) => {
+      const wx = P.wrN[0] + 4;
+      const hatch = [];
+      for (let y = 10; y < FLOOR; y += 12) hatch.push(<line key={y} x1={wx} y1={y} x2={wx + 9} y2={y + 8} stroke="#4a4642" strokeWidth="2" />);
+      return (
+        <g>
+          <line x1={wx} y1="6" x2={wx} y2={FLOOR} stroke="#6b665f" strokeWidth="4" strokeLinecap="round" />
+          {hatch}
+        </g>
+      );
+    },
+  },
+  toeHeel: {
+    vb: [-2, -12, 244, 182],
+    view: "side", pin: "anN", dur: 1300, hold: [150, 150],
+    frames: [
+      { px: 120, lN1: 90, lN2: 90, lN3: 62, lF1: 84, lF2: 88, lF3: 62 },
+      { px: 120, lN1: 90, lN2: 90, lN3: -38, lF1: 84, lF2: 88, lF3: -38 },
+    ],
+    blobs: [{ a: "knN", b: "anN", t: 0.45, dx: -4, r: 8 }],
+  },
+};
+
+function palmMark(P, ac, side) {
+  const dx = P.fiN[0] - P.wrN[0];
+  const dy = P.fiN[1] - P.wrN[1];
+  const len = Math.hypot(dx, dy) || 1;
+  const nx = (dy / len) * side;
+  const ny = (-dx / len) * side;
+  return <line x1={P.wrN[0] + nx} y1={P.wrN[1] + ny} x2={P.fiN[0] + nx} y2={P.fiN[1] + ny} stroke={ac} strokeWidth="2.4" strokeLinecap="round" />;
+}
+
+// ---------- Cálculo de la pose ----------
+function lerpFrame(A, B, u, def) {
+  const keys = new Set([...Object.keys(A), ...Object.keys(B)]);
+  const out = {};
+  keys.forEach((k) => {
+    const a = A[k] !== undefined ? A[k] : def[k];
+    const b = B[k] !== undefined ? B[k] : def[k];
+    out[k] = mix(a, b, u);
+  });
+  return out;
+}
+
+function solve(fig, u) {
+  const front = fig.view === "front";
+  const def = front ? DEF_FRONT : DEF_SIDE;
+  let fr;
+  if (fig.fn) fr = { ...def, ...fig.fn(u) };
+  else {
+    const A = fig.frames[0];
+    const B = fig.frames[1] || fig.frames[0];
+    fr = lerpFrame(A, B, u, def);
+    fr = { ...def, ...fr };
+  }
+  const H = [0, 0];
+  const S = pol(H, fr.T, L.torso);
+  const N = pol(S, fr.Hd, L.neck);
+  const Hc = pol(S, fr.Hd, L.neck + L.head);
+  const shN = front ? [S[0] - 20, S[1]] : S;
+  const shF = front ? [S[0] + 20, S[1]] : S;
+  const hpN = front ? [-9, 0] : H;
+  const hpF = front ? [9, 0] : H;
+  const elbN = pol(shN, fr.aN1, L.arm1);
+  const wrN = pol(elbN, fr.aN2, L.arm2);
+  const fiN = pol(wrN, fr.aN3, L.hand);
+  const elbF = pol(shF, fr.aF1, L.arm1);
+  const wrF = pol(elbF, fr.aF2, L.arm2);
+  const fiF = pol(wrF, fr.aF3, L.hand);
+  const knN = pol(hpN, fr.lN1, L.leg1);
+  const anN = pol(knN, fr.lN2, L.leg2);
+  const toN = pol(anN, fr.lN3, L.foot);
+  const knF = pol(hpF, fr.lF1, L.leg1);
+  const anF = pol(knF, fr.lF2, L.leg2);
+  const toF = pol(anF, fr.lF3, L.foot);
+  let P = { H, S, N, Hc, shN, shF, hpN, hpF, elbN, wrN, fiN, elbF, wrF, fiF, knN, anN, toN, knF, anF, toF };
+
+  const radii = { H: 6, S: 6, Hc: 10, elbN: 4, wrN: 4, fiN: 3, elbF: 4, wrF: 4, fiF: 3, knN: 5, anN: 4, toN: 3.5, knF: 5, anF: 4, toF: 3.5 };
+  let lowest = -1e9;
+  Object.keys(radii).forEach((k) => {
+    lowest = Math.max(lowest, P[k][1] + radii[k]);
+  });
+  const dx = fr.px - P[fig.pin][0];
+  const dy = FLOOR - lowest;
+  const sh = {};
+  Object.keys(P).forEach((k) => {
+    sh[k] = [P[k][0] + dx, P[k][1] + dy];
+  });
+  return { P: sh, bend: fr.bend, front };
+}
+
+// ---------- Dibujo ----------
+const seg = (a, b, w, c, key) => <line key={key} x1={a[0]} y1={a[1]} x2={b[0]} y2={b[1]} stroke={c} strokeWidth={w} strokeLinecap="round" />;
+// segmento con contorno oscuro (separa el brazo del torso)
+const segO = (a, b, w, c, key) => (
+  <g key={key}>
+    <line x1={a[0]} y1={a[1]} x2={b[0]} y2={b[1]} stroke="#1a1917" strokeWidth={w + 3.2} strokeLinecap="round" />
+    <line x1={a[0]} y1={a[1]} x2={b[0]} y2={b[1]} stroke={c} strokeWidth={w} strokeLinecap="round" />
+  </g>
+);
+
+function FigureSvg({ id, u = 0, accent = "#ff7a54" }) {
+  const fig = FIGURES[id];
+  const { P, bend, front } = solve(fig, u);
+  const farC = front ? BODY : FAR;
+
+  // torso con curvatura opcional (gato-vaca)
+  const vx = P.S[0] - P.H[0];
+  const vy = P.S[1] - P.H[1];
+  const vl = Math.hypot(vx, vy) || 1;
+  const cx = (P.H[0] + P.S[0]) / 2 + (vy / vl) * bend;
+  const cy = (P.H[1] + P.S[1]) / 2 + (-vx / vl) * bend;
+  const torso = <path d={`M ${P.H[0]} ${P.H[1]} Q ${cx} ${cy} ${P.S[0]} ${P.S[1]}`} fill="none" stroke={BODY} strokeWidth={front ? 13 : 11} strokeLinecap="round" />;
+
+  const legF = [seg(P.hpF, P.knF, 7, farC, "a"), seg(P.knF, P.anF, 7, farC, "b"), seg(P.anF, P.toF, 5, farC, "c")];
+  const armF = [segO(P.shF, P.elbF, 6.5, farC, "d"), segO(P.elbF, P.wrF, 6, farC, "e"), segO(P.wrF, P.fiF, 5, farC, "f")];
+  const legN = [segO(P.hpN, P.knN, 7.5, BODY, "g"), segO(P.knN, P.anN, 7, BODY, "h"), segO(P.anN, P.toN, 5, BODY, "i")];
+  const armN = [segO(P.shN, P.elbN, 6.5, BODY, "j"), segO(P.elbN, P.wrN, 6, BODY, "k"), segO(P.wrN, P.fiN, 5, BODY, "l")];
+
+  const blobs = (fig.blobs || []).map((b, i) => {
+    const A = P[b.a];
+    const B = b.b ? P[b.b] : A;
+    const t = b.t || 0;
+    return <circle key={i} className="rc-blob" cx={A[0] + (B[0] - A[0]) * t + (b.dx || 0)} cy={A[1] + (B[1] - A[1]) * t + (b.dy || 0)} r={b.r} fill={accent} stroke={accent} strokeWidth="1.5" />;
+  });
+
+  return (
+    <svg viewBox={(fig.vb || [0, 0, 240, 170]).join(" ")} style={{ width: "100%", height: "auto", display: "block" }} role="img" aria-label="Ilustración del ejercicio">
+      <defs>
+        <marker id="rc-arrow" viewBox="0 0 10 10" refX="7" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+          <path d="M 0 0 L 10 5 L 0 10 z" fill={accent} />
+        </marker>
+      </defs>
+      <line x1="8" y1={FLOOR + 1} x2="232" y2={FLOOR + 1} stroke="#3a3733" strokeWidth="2" strokeLinecap="round" />
+      {fig.back ? fig.back(P, u, accent) : null}
+      {fig.headBack ? <circle cx={P.Hc[0]} cy={P.Hc[1]} r={L.head} fill={BODY} /> : null}
+      {front ? (
+        <g>
+          {legF}
+          {legN}
+          {seg(P.hpN, P.hpF, 10, BODY, "hip")}
+          {torso}
+          {seg(P.shN, P.shF, 10, BODY, "sh")}
+          {armF}
+          {armN}
+        </g>
+      ) : (
+        <g>
+          {legF}
+          {armF}
+          {torso}
+          {legN}
+          {armN}
+        </g>
+      )}
+      {seg(P.S, P.N, 5, BODY, "neck")}
+      {fig.extras ? fig.extras(P, u, accent) : null}
+      {blobs}
+      {fig.headBack ? null : <circle cx={P.Hc[0]} cy={P.Hc[1]} r={L.head} fill={BODY} />}
+    </svg>
+  );
+}
+
+// ---------- Animación ----------
+function progress(fig, t) {
+  if (fig.loop) return (t / (fig.dur || 3000)) % 1;
+  const [ha, hb] = fig.hold || [300, 300];
+  const d = fig.dur || 2000;
+  const total = 2 * d + ha + hb;
+  let m = t % total;
+  if (m < ha) return 0;
+  m -= ha;
+  if (m < d) return ease(m / d);
+  m -= d;
+  if (m < hb) return 1;
+  m -= hb;
+  return 1 - ease(m / d);
+}
+
+function ExerciseFigure({ id, accent }) {
+  const fig = FIGURES[id];
+  const [t, setT] = useState(0);
+  const [reduced, setReduced] = useState(false);
+
+  useEffect(() => {
+    const mq = window.matchMedia ? window.matchMedia("(prefers-reduced-motion: reduce)") : null;
+    setReduced(!!(mq && mq.matches));
+  }, []);
+
+  useEffect(() => {
+    if (reduced) return undefined;
+    let raf;
+    const start = performance.now();
+    const tick = (now) => {
+      setT(now - start);
+      raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [id, reduced]);
+
+  const u = reduced ? 1 : progress(fig, t);
+  return <FigureSvg id={id} u={u} accent={accent} />;
+}
+
+/* ==========================================================================
+   RecuperacionScreen
+   1) ¿Cómo te sientes hoy?  →  energía (fatigado / bien / genial)
+   2) Mapa muscular (frente + espalda) → tocas los músculos adoloridos
+   3) DESPUÉS de tocar un músculo aparece su tarjeta:
+        - nivel de dolor (leve / moderado / fuerte)
+        - qué hacer con ese músculo hoy
+        - 2 ejercicios de recuperación
+   4) Recomendación del día (cruza energía + dolores + lo que te toca hoy)
+
+   Las claves de músculo (pecho, espalda, biceps...) son las MISMAS keys de tu
+   arreglo CATEGORIES, así que se conecta directo con tu catálogo.
+   ========================================================================== */
+
+// ---------- Datos ----------
+const MUSCLES = {
+  pecho: { label: "Pecho", tips: [{ t: "Estiramiento en marco de puerta, 30 s por lado", fig: "doorway" }, { t: "Aperturas suaves con banda, 2 × 15", fig: "bandFly" }] },
+  espalda: { label: "Espalda", tips: [{ t: "Postura del niño, 30 a 45 s", fig: "childPose" }, { t: "Gato y vaca, 10 repeticiones lentas", fig: "catCow" }] },
+  hombros: { label: "Hombros", tips: [{ t: "Cruce de brazo al pecho, 30 s por lado", fig: "crossArm" }, { t: "Círculos lentos de brazo, 10 por lado", fig: "armCircles" }] },
+  biceps: { label: "Bíceps", tips: [{ t: "Brazo extendido contra la pared, 30 s por lado", fig: "wallBiceps" }, { t: "Extensión suave de codo, 10 repeticiones", fig: "elbowExt" }] },
+  triceps: { label: "Tríceps", tips: [{ t: "Estiramiento sobre la cabeza, 30 s por lado", fig: "tricepsOverhead" }, { t: "Círculos de brazo, 10 por lado", fig: "armCircles" }] },
+  antebrazo: { label: "Antebrazo", tips: [{ t: "Estiramiento de flexores con la palma arriba, 30 s", fig: "flexorStretch" }, { t: "Estiramiento de extensores con la palma abajo, 30 s", fig: "extensorStretch" }] },
+  abdomen: { label: "Abdomen", tips: [{ t: "Cobra suave, 20 a 30 s", fig: "cobra" }, { t: "Respiración diafragmática, 1 min", fig: "diaphragm" }] },
+  cuadriceps: { label: "Cuádriceps", tips: [{ t: "Estiramiento de pie, 30 s por pierna", fig: "quadStand" }, { t: "Zancada baja para la cadera, 30 s por lado", fig: "lungeHip" }] },
+  femorales: { label: "Femorales", tips: [{ t: "Sentado con la pierna extendida, 30 s por lado", fig: "seatedHam" }, { t: "Bisagra de cadera sin peso, 10 repeticiones", fig: "hipHinge" }] },
+  gluteos: { label: "Glúteos", tips: [{ t: "Postura de la paloma, 30 a 45 s por lado", fig: "pigeon" }, { t: "Puente de glúteo sin peso, 2 × 12", fig: "bridge" }] },
+  gemelos: { label: "Gemelos", tips: [{ t: "Estiramiento en la pared, 30 s por pierna", fig: "calfWall" }, { t: "Caminar en puntas y talones, 1 min", fig: "toeHeel" }] },
+};
+const GROUP_KEYS = Object.keys(MUSCLES);
+
+const ENERGY = [
+  { key: "fatigado", label: "Fatigado", angle: -55 },
+  { key: "bien", label: "Bien", angle: 0 },
+  { key: "genial", label: "Genial", angle: 55 },
+];
+
+const PAIN_LEVELS = [
+  { key: "leve", label: "Leve", color: "#e6c84f", advice: "Puedes entrenarlo con menos carga (cerca de 20 % menos) y un buen calentamiento." },
+  { key: "moderado", label: "Moderado", color: "#ec8a3a", advice: "Mejor dale 24 a 48 h de descanso. Entrena otro grupo y haz movilidad suave." },
+  { key: "fuerte", label: "Fuerte", color: "#e0574a", advice: "Evítalo hoy. Si el dolor es punzante, está en una articulación o dura más de 3 o 4 días, consulta a un profesional." },
+];
+const PAIN_BY_KEY = Object.fromEntries(PAIN_LEVELS.map((l) => [l.key, l]));
+
+// ---------- Formas del cuerpo ----------
+// Cada forma se dibuja solo para el lado IZQUIERDO y se refleja para el derecho.
+// Las claves de "key" coinciden con las de CATEGORIES.
+const MIRROR = "translate(200,0) scale(-1,1)";
+
+const BASE_SHAPES = [
+  "M 74 66 L 126 66 C 130 90 130 130 124 172 L 118 186 L 82 186 L 76 172 C 70 130 70 90 74 66 Z", // torso
+  "M 91 44 L 91 64 L 109 64 L 109 44 Z", // cuello
+  "M 51 100 L 66 104 L 64 152 L 50 148 Z", // brazo
+  "M 35 208 C 31 218 31 226 35 232 C 40 228 45 218 46 208 Z", // mano
+  "M 70 188 C 70 200 72 230 74 296 L 96 296 C 98 250 100 210 100 188 Z", // muslo
+  "M 78 292 C 76 298 76 302 78 308 L 92 308 C 94 302 94 298 92 292 Z", // rodilla
+  "M 80 384 L 90 384 C 92 396 93 404 92 412 C 84 417 75 415 75 408 C 75 400 78 392 80 384 Z", // pie
+];
+
+const DELTOID = "M 76 68 C 64 68 52 72 48 84 C 45 94 46 104 50 110 L 62 106 C 62 96 66 84 75 78 Z";
+const UPPER_ARM = "M 49 113 C 47 124 45 136 45 146 L 57 148 C 58 138 60 124 62 110 Z";
+const FOREARM = "M 44 152 C 42 166 38 184 36 202 L 44 204 C 48 190 54 172 57 154 Z";
+
+const FRONT_SHAPES = [
+  { key: "espalda", d: ["M 91 59 C 86 61 80 63 75 67 C 78 73 84 75 90 71 Z"] },
+  { key: "hombros", d: [DELTOID] },
+  { key: "pecho", d: ["M 82 76 C 90 74 98 77 99 81 L 99 111 C 91 115 81 112 76 104 C 72 96 74 84 82 76 Z"] },
+  {
+    key: "abdomen",
+    d: [
+      "M 86 117 L 99 115 L 99 176 C 92 177 87 173 85 165 C 83 150 84 132 86 117 Z",
+      "M 77 118 C 73 134 74 156 78 172 L 83 168 C 81 152 81 134 82 118 Z",
+    ],
+    lines: ["M 85.5 133 L 99 131.5", "M 84.5 149 L 99 147.5", "M 85 163 L 99 161.5"],
+  },
+  { key: "biceps", d: [UPPER_ARM] },
+  { key: "antebrazo", d: [FOREARM] },
+  { key: "cuadriceps", d: ["M 73 186 C 70 216 70 256 77 290 L 93 290 C 97 262 99 226 98 192 C 90 194 80 192 73 186 Z"] },
+  { key: "gemelos", d: ["M 76 306 C 72 326 74 352 81 383 L 89 383 C 92 352 93 328 91 306 Z"] },
+];
+
+const BACK_SHAPES = [
+  {
+    key: "espalda",
+    d: [
+      "M 99 56 C 92 59 84 63 77 68 C 79 80 89 94 99 120 Z",
+      "M 74 86 C 72 104 76 128 86 152 L 98 152 C 98 140 98 130 96 122 C 86 114 78 100 74 86 Z",
+      "M 86 152 L 99 148 L 99 178 L 84 174 C 84 166 85 158 86 152 Z",
+    ],
+  },
+  { key: "hombros", d: [DELTOID] },
+  { key: "triceps", d: [UPPER_ARM] },
+  { key: "antebrazo", d: [FOREARM] },
+  { key: "gluteos", d: ["M 74 180 C 71 194 73 208 86 212 C 95 213 99 206 99 198 L 99 180 C 90 184 82 184 74 180 Z"] },
+  { key: "femorales", d: ["M 73 218 C 71 244 72 268 77 290 L 93 290 C 97 268 99 244 98 218 C 90 220 80 220 73 218 Z"] },
+  { key: "gemelos", d: ["M 76 304 C 70 324 74 350 82 380 L 90 380 C 96 352 96 324 92 304 Z"] },
+];
+
+// ---------- Lógica de la recomendación ----------
+function listNames(keys) {
+  const names = keys.map((k) => MUSCLES[k].label.toLowerCase());
+  if (names.length <= 1) return names.join("");
+  return names.slice(0, -1).join(", ") + " y " + names[names.length - 1];
+}
+
+// La energía modifica cómo se trata el dolor:
+// - Fatigado: el dolor se toma un nivel más en serio (leve -> moderado -> fuerte).
+// - Bien / Genial: se respeta el nivel que marcó la persona.
+function effectiveLevel(level, energia) {
+  if (energia !== "fatigado") return level;
+  return level === "leve" ? "moderado" : "fuerte";
+}
+
+// Consejo que se muestra en la tarjeta de cada músculo (depende del nivel Y de la energía).
+function adviceFor(level, energia) {
+  if (energia === "fatigado") {
+    const eff = effectiveLevel(level, energia);
+    const extra = level === "fuerte" ? "" : " Como estás fatigado, lo tratamos con más cautela.";
+    return PAIN_BY_KEY[eff].advice + extra;
+  }
+  if (energia === "genial" && level === "leve") {
+    return "Te sientes con energía: puedes entrenarlo con buen calentamiento, sin forzar.";
+  }
+  return PAIN_BY_KEY[level].advice;
+}
+
+// Función pura: la puedes usar tal cual en tu App.
+function buildRecommendation({ energia, dolores, todayCategory }) {
+  const entries = Object.entries(dolores).map(([k, l]) => [k, l, effectiveLevel(l, energia)]);
+  const avoid = entries.filter(([, , eff]) => eff !== "leve").map(([k]) => k);
+  const light = entries.filter(([, , eff]) => eff === "leve").map(([k]) => k);
+  const free = GROUP_KEYS.filter((k) => !dolores[k]);
+
+  let title;
+  let text;
+  if (energia === "fatigado" && avoid.length) {
+    title = "Hoy toca recuperarte";
+    text = `Estás cansado y con dolor en ${listNames(avoid)}. Camina 20 a 30 min suave, haz movilidad y duerme de 7 a 9 h.`;
+  } else if (energia === "fatigado") {
+    title = "Sesión ligera";
+    text = "Quita una serie por ejercicio o baja el peso entre 10 y 20 %. Dormir bien hoy te ayuda más que forzar.";
+  } else if (avoid.length && energia === "genial") {
+    title = "Tienes energía, cuida el dolor";
+    text = `Deja descansar ${listNames(avoid)} y aprovecha para trabajar otros grupos con más intensidad.`;
+  } else if (avoid.length && energia === "bien") {
+    title = "Entrena, pero rodea el dolor";
+    text = `Deja descansar ${listNames(avoid)} y sigue tu plan con los demás grupos.`;
+  } else if (avoid.length) {
+    title = "Entrena, pero rodea el dolor";
+    text = `Deja descansar ${listNames(avoid)} y trabaja otros grupos.`;
+  } else if (light.length && energia === "genial") {
+    title = "Buen día, sin forzar";
+    text = `Te sientes con energía, pero calienta bien y no fuerces ${listNames(light)}.`;
+  } else if (light.length) {
+    title = "Puedes entrenar con cuidado";
+    text = `Calienta bien y baja la carga en ${listNames(light)}.`;
+  } else if (energia === "genial") {
+    title = "Buen día para exigirte";
+    text = "Aprovecha para intentar más peso o una repetición extra en tu ejercicio principal.";
+  } else {
+    title = "Entrena según tu plan";
+    text = "Todo en orden. Sigue tu rutina de hoy.";
+  }
+
+  let conflict = null;
+  if (todayCategory && dolores[todayCategory]) {
+    const level = dolores[todayCategory];
+    const eff = effectiveLevel(level, energia);
+    const label = MUSCLES[todayCategory].label;
+    if (eff === "leve") {
+      conflict = `Hoy te toca ${label}: hazlo con cerca de 20 % menos de carga.`;
+    } else {
+      const why = energia === "fatigado" && level === "leve" ? "lo marcaste con dolor leve y además estás fatigado" : `lo marcaste con dolor ${level}`;
+      conflict = `Hoy te toca ${label} y ${why}. Mejor cámbialo por otro grupo.`;
+    }
+  }
+  return { title, text, free, conflict, anySore: entries.length > 0 };
+}
+
+// ---------- Piezas visuales ----------
+function GaugeIcon({ angle, color, size = 30 }) {
+  const cx = 12;
+  const cy = 14.6;
+  const rad = ((angle - 90) * Math.PI) / 180;
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="1.8" strokeLinecap="round" aria-hidden="true">
+      <path d="M3.5 17.5 A 9 9 0 1 1 20.5 17.5" />
+      <line x1={cx} y1={cy} x2={cx + Math.cos(rad) * 6.5} y2={cy + Math.sin(rad) * 6.5} />
+      <circle cx={cx} cy={cy} r="1.4" fill={color} stroke="none" />
+    </svg>
+  );
+}
+
+function SectionTitle({ icon, children }) {
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 14 }}>
+      <div style={{ width: 40, height: 40, borderRadius: "50%", background: "#2a2320", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+        {icon}
+      </div>
+      <div style={{ fontSize: 17, fontWeight: 700, lineHeight: 1.25 }}>{children}</div>
+    </div>
+  );
+}
+
+function BodyFigure({ shapes, dolores, onToggle, label }) {
+  return (
+    <div style={{ flex: 1, minWidth: 0 }}>
+      <svg viewBox="24 0 152 430" style={{ width: "100%", height: "auto", display: "block" }} role="group" aria-label={label}>
+        <ellipse cx="100" cy="28" rx="17" ry="22" fill="#2a2825" pointerEvents="none" />
+        {[false, true].map((m) => (
+          <g key={m ? "r" : "l"} transform={m ? MIRROR : undefined} fill="#252320" pointerEvents="none">
+            {BASE_SHAPES.map((d, i) => (
+              <path key={i} d={d} />
+            ))}
+          </g>
+        ))}
+        {shapes.map((s) => {
+          const level = dolores[s.key];
+          return (
+            <g
+              key={s.key}
+              className={"rc-mm" + (level ? " on" : "")}
+              style={level ? { "--c": PAIN_BY_KEY[level].color } : undefined}
+              role="button"
+              tabIndex={0}
+              aria-pressed={!!level}
+              aria-label={MUSCLES[s.key].label}
+              onClick={() => onToggle(s.key)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" || e.key === " ") {
+                  e.preventDefault();
+                  onToggle(s.key);
+                }
+              }}
+            >
+              {[false, true].map((m) => (
+                <g key={m ? "r" : "l"} transform={m ? MIRROR : undefined}>
+                  {s.d.map((d, i) => (
+                    <path key={i} d={d} />
+                  ))}
+                  {(s.lines || []).map((d, i) => (
+                    <path key={"n" + i} d={d} className="ln" />
+                  ))}
+                </g>
+              ))}
+            </g>
+          );
+        })}
+      </svg>
+      <div style={{ textAlign: "center", fontSize: 12.5, color: "#8a8580", marginTop: 4 }}>{label}</div>
+    </div>
+  );
+}
+
+// Ventana que muestra la ilustración animada del ejercicio (solo imagen, sin texto explicativo).
+function ExerciseSheet({ tip, accent, onClose }) {
+  const closeRef = useRef(null);
+  const [name, ...rest] = tip.t.split(", ");
+  const dose = rest.join(", ");
+
+  useEffect(() => {
+    const onKey = (e) => {
+      if (e.key === "Escape") onClose();
+    };
+    document.addEventListener("keydown", onKey);
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    if (closeRef.current) closeRef.current.focus();
+    return () => {
+      document.removeEventListener("keydown", onKey);
+      document.body.style.overflow = prev;
+    };
+  }, [onClose]);
+
+  return (
+    <div onClick={onClose} style={{ position: "fixed", inset: 0, zIndex: 50, background: "rgba(0,0,0,.62)", display: "flex", alignItems: "flex-end", justifyContent: "center" }}>
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-label={name}
+        onClick={(e) => e.stopPropagation()}
+        style={{ width: "100%", maxWidth: 480, boxSizing: "border-box", background: "#1f1e1c", borderTop: "1px solid #33312e", borderRadius: "24px 24px 0 0", padding: "20px 20px 28px", animation: "rcUp .22s ease-out" }}
+      >
+        <div style={{ display: "flex", alignItems: "flex-start", gap: 12, marginBottom: 14 }}>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontSize: 17, fontWeight: 700, lineHeight: 1.3 }}>{name}</div>
+            {dose && <div style={{ fontSize: 13.5, color: "#a39d95", marginTop: 3 }}>{dose}</div>}
+          </div>
+          <button ref={closeRef} onClick={onClose} aria-label="Cerrar" style={{ background: "#1a1917", border: "1px solid #33312e", borderRadius: "50%", width: 36, height: 36, display: "flex", alignItems: "center", justifyContent: "center", color: "#c9c4bd", cursor: "pointer", flexShrink: 0 }}>
+            <X size={18} />
+          </button>
+        </div>
+        <div style={{ background: "#1a1917", border: "1px solid #2a2824", borderRadius: 18, padding: 8 }}>
+          <ExerciseFigure id={tip.fig} accent={accent.solid} />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// Tarjeta que aparece DESPUÉS de tocar un músculo.
+function MuscleCard({ muscleKey, level, energia, accent, onLevel, onRemove, onView }) {
+  const info = MUSCLES[muscleKey];
+  const current = PAIN_BY_KEY[level];
+  return (
+    <div style={{ background: "#1f1e1c", border: "1px solid #33312e", borderRadius: 18, padding: 16, marginBottom: 10 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12 }}>
+        <span style={{ width: 12, height: 12, borderRadius: "50%", background: current.color, flexShrink: 0, transition: "background .18s" }} />
+        <div style={{ flex: 1, fontSize: 16, fontWeight: 700 }}>{info.label}</div>
+        <button onClick={onRemove} aria-label={`Quitar ${info.label}`} style={{ background: "none", border: "none", color: "#8a8580", cursor: "pointer", padding: 4, display: "flex" }}>
+          <X size={18} />
+        </button>
+      </div>
+
+      <div style={{ fontSize: 12.5, color: "#8a8580", marginBottom: 8 }}>¿Qué tanto duele?</div>
+      <div style={{ display: "flex", gap: 2, background: "#1a1917", border: "1px solid #33312e", borderRadius: 999, padding: 3, marginBottom: 12 }}>
+        {PAIN_LEVELS.map((l) => {
+          const on = l.key === level;
+          return (
+            <button
+              key={l.key}
+              aria-pressed={on}
+              onClick={() => onLevel(l.key)}
+              style={{
+                flex: 1,
+                border: "none",
+                borderRadius: 999,
+                padding: "8px 4px",
+                fontSize: 13,
+                fontWeight: 700,
+                cursor: "pointer",
+                background: on ? l.color : "transparent",
+                color: on ? "#1a1512" : "#a39d95",
+                transition: "background .18s, color .18s",
+              }}
+            >
+              {l.label}
+            </button>
+          );
+        })}
+      </div>
+
+      <div style={{ fontSize: 14, lineHeight: 1.5, color: "#d7d2ca", marginBottom: 14 }}>{adviceFor(level, energia)}</div>
+
+      <div style={{ fontSize: 12.5, color: "#8a8580", marginBottom: 6 }}>Para recuperarte</div>
+      {info.tips.map((tip) => (
+        <div key={tip.t} style={{ display: "flex", alignItems: "center", gap: 10, fontSize: 13.5, lineHeight: 1.45, color: "#c9c4bd", padding: "6px 0" }}>
+          <span style={{ width: 5, height: 5, borderRadius: "50%", background: "#6e6a65", flexShrink: 0 }} />
+          <span style={{ flex: 1, minWidth: 0 }}>{tip.t}</span>
+          <button onClick={() => onView(tip)} aria-label={`Ver ejercicio: ${tip.t}`} style={{ width: 38, height: 38, borderRadius: "50%", border: "1px solid #33312e", background: "#1a1917", color: accent.solid, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", flexShrink: 0 }}>
+            <Eye size={18} />
+          </button>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// ---------- Pantalla ----------
+function RecuperacionScreen({
+  accent = { solid: "#ff7a54", text: "#1a1512" },
+  todayCategory = "pecho", // categoría que le toca hoy según su rutina (o null)
+  onBack,
+  showData = true, // solo para el demo: muestra lo que se guardaría
+}) {
+  const [energia, setEnergia] = useState(null);
+  const [dolores, setDolores] = useState({}); // { pecho: "moderado", ... }
+  const resultsRef = useRef(null);
+  const [viewing, setViewing] = useState(null);
+
+  const selected = Object.keys(dolores);
+  const rec = useMemo(() => buildRecommendation({ energia, dolores, todayCategory }), [energia, dolores, todayCategory]);
+  const payload = { fecha: new Date().toISOString().slice(0, 10), energia, dolores };
+
+  const toggleMuscle = (k) =>
+    setDolores((prev) => {
+      const next = { ...prev };
+      if (next[k]) delete next[k];
+      else next[k] = "moderado";
+      return next;
+    });
+  const setLevel = (k, level) => setDolores((prev) => ({ ...prev, [k]: level }));
+
+
+  const shell = {
+    minHeight: "100vh",
+    width: "100%",
+    background: "#141311",
+    color: "#f2ede6",
+    fontFamily: "'Inter', -apple-system, BlinkMacSystemFont, sans-serif",
+    boxSizing: "border-box",
+    padding: "28px 20px 40px",
+    position: "relative",
+    maxWidth: 480,
+    margin: "0 auto",
+  };
+
+  return (
+    <div style={shell}>
+      <style>{`
+        .rc-mm { cursor: pointer; outline: none; }
+        .rc-mm path:not(.ln) { fill: #5b5650; stroke: #1a1917; stroke-width: 1.4; transition: fill .18s; }
+        .rc-mm:not(.on):hover path:not(.ln) { fill: #6f6961; }
+        .rc-mm.on path:not(.ln) { fill: var(--c); }
+        .rc-mm path.ln { fill: none; stroke: #1a1917; stroke-width: 1.2; pointer-events: none; }
+        .rc-mm:focus-visible path:not(.ln) { stroke: #f2ede6; }
+        .rc-blob { fill-opacity: .35; stroke-opacity: .9; animation: rcp 1.8s ease-in-out infinite; }
+        @keyframes rcp { 50% { fill-opacity: .6; } }
+        @keyframes rcUp { from { transform: translateY(24px); opacity: 0; } to { transform: none; opacity: 1; } }
+        @media (prefers-reduced-motion: reduce) { .rc-mm path:not(.ln) { transition: none; } .rc-blob { animation: none; } }
+      `}</style>
+
+      {/* Barra superior (igual que tu TopBar) */}
+      <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 22, minHeight: 30 }}>
+        {onBack && (
+          <button onClick={onBack} aria-label="Volver" style={{ background: "none", border: "none", color: "#c9c4bd", cursor: "pointer", padding: 4, display: "flex" }}>
+            <ArrowLeft size={22} />
+          </button>
+        )}
+        <div style={{ fontSize: 15, fontWeight: 600, color: "#c9c4bd", flex: 1 }}>Recuperación</div>
+      </div>
+
+      {/* 1) Energía */}
+      <SectionTitle icon={<GaugeIcon angle={0} color={accent.solid} size={22} />}>¿Cómo te sientes hoy?</SectionTitle>
+      <div style={{ display: "flex", justifyContent: "center", gap: 22, marginBottom: 34 }}>
+        {ENERGY.map((e) => {
+          const on = energia === e.key;
+          return (
+            <button key={e.key} onClick={() => setEnergia(on ? null : e.key)} aria-pressed={on} style={{ background: "none", border: "none", cursor: "pointer", color: on ? "#f2ede6" : "#a39d95", fontSize: 13.5, fontWeight: on ? 700 : 500, display: "flex", flexDirection: "column", alignItems: "center", gap: 8, padding: 0 }}>
+              <span
+                style={{
+                  width: 64,
+                  height: 64,
+                  borderRadius: "50%",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  background: on ? `${accent.solid}26` : "#1f1e1c",
+                  border: on ? `1.5px solid ${accent.solid}` : "1px solid #33312e",
+                  transition: "background .18s, border-color .18s",
+                }}
+              >
+                <GaugeIcon angle={e.angle} color={on ? accent.solid : "#8a8580"} />
+              </span>
+              {e.label}
+            </button>
+          );
+        })}
+      </div>
+
+      {/* 2) Mapa muscular */}
+      <SectionTitle icon={<Dumbbell size={19} color={accent.solid} />}>¿Algún músculo está particularmente adolorido?</SectionTitle>
+      <div style={{ background: "#1a1917", border: "1px solid #2a2824", borderRadius: 20, padding: "18px 12px 14px", marginBottom: 10 }}>
+        <div style={{ display: "flex", gap: 6 }}>
+          <BodyFigure shapes={FRONT_SHAPES} dolores={dolores} onToggle={toggleMuscle} label="Frente" />
+          <BodyFigure shapes={BACK_SHAPES} dolores={dolores} onToggle={toggleMuscle} label="Espalda" />
+        </div>
+        <div style={{ display: "flex", justifyContent: "center", gap: 14, marginTop: 12, flexWrap: "wrap" }}>
+          {PAIN_LEVELS.map((l) => (
+            <span key={l.key} style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: "#a39d95" }}>
+              <span style={{ width: 9, height: 9, borderRadius: "50%", background: l.color }} />
+              {l.label}
+            </span>
+          ))}
+        </div>
+      </div>
+      <div style={{ fontSize: 12.5, color: "#8a8580", textAlign: "center", marginBottom: 26 }}>Toca un músculo para marcarlo. Vuelve a tocarlo para quitarlo.</div>
+
+      {/* 3) Lo que aparece después de tocar un músculo */}
+      <div ref={resultsRef} style={{ scrollMarginTop: 16 }}>
+        {selected.map((k) => (
+          <MuscleCard key={k} muscleKey={k} level={dolores[k]} energia={energia} accent={accent} onLevel={(lvl) => setLevel(k, lvl)} onRemove={() => toggleMuscle(k)} onView={setViewing} />
+        ))}
+      </div>
+
+      {/* 4) Recomendación del día */}
+      {(energia || selected.length > 0) && (
+        <div style={{ border: `1.5px solid ${accent.solid}`, background: `${accent.solid}12`, borderRadius: 20, padding: 18, marginTop: 8, marginBottom: 16 }}>
+          <div style={{ fontSize: 12.5, color: "#a39d95", marginBottom: 4 }}>Tu recomendación de hoy</div>
+          <div style={{ fontSize: 20, fontWeight: 700, marginBottom: 8 }}>{rec.title}</div>
+          <div style={{ fontSize: 14.5, lineHeight: 1.5, color: "#d7d2ca" }}>{rec.text}</div>
+
+          {rec.conflict && (
+            <div style={{ display: "flex", gap: 10, alignItems: "flex-start", marginTop: 14, padding: "12px 14px", borderRadius: 14, background: "#2a1d15", border: "1px solid #4a3324", fontSize: 13.5, lineHeight: 1.45, color: "#f2ede6" }}>
+              <Info size={17} color={accent.solid} style={{ flexShrink: 0, marginTop: 1 }} />
+              <span>{rec.conflict}</span>
+            </div>
+          )}
+
+        </div>
+      )}
+
+      {showData && (
+        <details style={{ marginTop: 18, fontSize: 13, color: "#a39d95" }}>
+          <summary style={{ cursor: "pointer" }}>Datos que se guardarían (solo demo)</summary>
+          <pre style={{ background: "#1a1917", border: "1px solid #2a2824", borderRadius: 14, padding: 14, marginTop: 10, overflowX: "auto", fontSize: 12, color: "#d7d2ca" }}>{JSON.stringify(payload, null, 2)}</pre>
+        </details>
+      )}
+
+      {viewing && <ExerciseSheet tip={viewing} accent={accent} onClose={() => setViewing(null)} />}
+
+      {/* Barra fija: confirma la selección aunque el mapa ocupe toda la pantalla */}
+      {selected.length > 0 && (
+        <div style={{ position: "sticky", bottom: 14, marginTop: 20, display: "flex", alignItems: "center", gap: 10, padding: "8px 8px 8px 16px", borderRadius: 999, background: "#1f1e1c", border: "1px solid #33312e", boxShadow: "0 8px 24px rgba(0,0,0,.45)" }}>
+          <div style={{ flex: 1, minWidth: 0, fontSize: 13.5, color: "#d7d2ca", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{selected.map((k) => MUSCLES[k].label).join(", ")}</div>
+          <button onClick={() => resultsRef.current?.scrollIntoView({ behavior: "smooth", block: "start" })} style={{ display: "flex", alignItems: "center", gap: 4, padding: "9px 14px", borderRadius: 999, border: "none", background: accent.solid, color: accent.text, fontSize: 13.5, fontWeight: 700, cursor: "pointer", flexShrink: 0 }}>
+            Ver qué hacer <ChevronDown size={16} />
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+  return RecuperacionScreen;
+})();
+// ===================== FIN RECUPERACIÓN ===============================
+
 export default function App() {
   const [screen, setScreen] = useState("login");
   const [loading, setLoading] = useState(true);
@@ -4006,6 +4978,17 @@ export default function App() {
   }
 
   // ---------- DAYS LIST ----------
+  if (screen === "recovery") {
+    return (
+      <RecuperacionScreen
+        accent={accent}
+        todayCategory={getDay(todayDayKey()).category}
+        onBack={() => setScreen("days")}
+        showData={false}
+      />
+    );
+  }
+
   if (screen === "days") {
     const today = todayDayKey();
     return (
@@ -4073,7 +5056,7 @@ export default function App() {
           const rows = EXERCISE_CATEGORIES.filter((c) => c.key !== "cardio" && c.key !== "otro" && totals[c.key]).map((c) => ({ key: c.key, label: c.label, total: totals[c.key] }));
           return (
             <div style={{ marginTop: 18 }}>
-              <div style={{ display: "flex", gap: 8, justifyContent: "center" }}>
+              <div style={{ display: "flex", gap: 6, justifyContent: "center", flexWrap: "wrap" }}>
                 {rows.length > 0 && (
                   <button
                     ref={summaryButtonRef}
@@ -4092,7 +5075,7 @@ export default function App() {
                       display: "flex",
                       alignItems: "center",
                       gap: 6,
-                      padding: "7px 14px",
+                      padding: "7px 11px",
                       borderRadius: 999,
                       border: "1px solid #33312e",
                       background: "none",
@@ -4123,7 +5106,7 @@ export default function App() {
                     display: "flex",
                     alignItems: "center",
                     gap: 6,
-                    padding: "7px 14px",
+                    padding: "7px 11px",
                     borderRadius: 999,
                     border: `1px solid ${showCalendar ? accent.solid : "#33312e"}`,
                     background: "none",
@@ -4136,6 +5119,25 @@ export default function App() {
                   <CalendarIcon size={13} />
                   Calendario
                   <ChevronDown size={13} style={{ transform: showCalendar ? "rotate(180deg)" : "none" }} />
+                </button>
+                <button
+                  onClick={() => setScreen("recovery")}
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 6,
+                    padding: "7px 11px",
+                    borderRadius: 999,
+                    border: "1px solid #33312e",
+                    background: "none",
+                    color: "#a39d95",
+                    fontSize: 12.5,
+                    fontWeight: 500,
+                    cursor: "pointer",
+                  }}
+                >
+                  <HeartPulse size={13} />
+                  Recuperación
                 </button>
               </div>
               {showWeekSummary && rows.length > 0 && (
